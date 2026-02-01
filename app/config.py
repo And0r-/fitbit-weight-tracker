@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Sync
     sync_interval_hours: int = 4
 
+    # Security (set SECURE_COOKIES=false for local HTTP dev)
+    secure_cookies: bool = True
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

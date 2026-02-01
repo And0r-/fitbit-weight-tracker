@@ -148,7 +148,7 @@ async def index(
         {"request": request, "token": share_token.token, "is_admin": share_token.is_admin},
     )
     # Set cookie for future visits
-    response.set_cookie("token", share_token.token, httponly=True, max_age=60*60*24*365)
+    response.set_cookie("token", share_token.token, httponly=True, secure=settings.secure_cookies, samesite="lax", max_age=60*60*24*365)
     return response
 
 
@@ -237,7 +237,7 @@ async def login_post(
         )
 
     response = RedirectResponse("/", status_code=303)
-    response.set_cookie("token", token, httponly=True, max_age=60*60*24*365)
+    response.set_cookie("token", token, httponly=True, secure=settings.secure_cookies, samesite="lax", max_age=60*60*24*365)
     return response
 
 
@@ -428,7 +428,7 @@ async def regenerate_token(
 
     # Update cookie if own token
     if is_own_token:
-        response.set_cookie("token", new_token_value, httponly=True, max_age=60*60*24*365)
+        response.set_cookie("token", new_token_value, httponly=True, secure=settings.secure_cookies, samesite="lax", max_age=60*60*24*365)
 
     return response
 
