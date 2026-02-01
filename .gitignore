@@ -1,4 +1,17 @@
-# .gitignore
-CLAUDE.md
+# Secrets
 .env
-tokens.json
+data/tokens.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Project docs (optional)
+CLAUDE.md

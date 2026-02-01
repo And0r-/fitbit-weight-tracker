@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Gewichtsverlauf</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body { background: #0f172a; }</style>
+</head>
+<body class="bg-slate-900 text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-white">Admin</h1>
+            <div class="flex gap-4">
+                <a href="/" class="text-blue-400 hover:text-blue-300">Zur Ansicht</a>
+                <a href="/logout" class="text-gray-400 hover:text-gray-300">Logout</a>
+            </div>
+        </div>
+
+        <!-- Fitbit Status -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-8">
+            <h2 class="text-lg font-semibold mb-4">Fitbit Verbindung</h2>
+            {% if fitbit_connected %}
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 bg-emerald-500 rounded-full"></span>
+                    <span class="text-emerald-400">Verbunden</span>
+                </div>
+                <form method="POST" action="/admin/sync">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
+                        Alle Daten synchronisieren
+                    </button>
+                </form>
+            </div>
+            <p class="text-gray-500 text-sm mt-4">
+                Automatische Synchronisation alle {{ sync_interval }} Stunden (letzte 7 Tage).
+            </p>
+            {% else %}
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 bg-red-500 rounded-full"></span>
+                    <span class="text-red-400">Nicht verbunden</span>
+                </div>
+                <a href="/fitbit/login" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
+                    Mit Fitbit verbinden
+                </a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Create Token -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-8">
+            <h2 class="text-lg font-semibold mb-4">Neuen Token erstellen</h2>
+            <form method="POST" action="/admin/tokens/create" class="flex flex-wrap gap-4">
+                <input
+                    type="text"
+                    name="name"
+                    placeholder="Name (z.B. Max, Anna...)"
+                    class="flex-1 min-w-48 px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                    required
+                >
+                <label class="flex items-center gap-2 text-gray-400">
+                    <input type="checkbox" name="is_admin" value="true" class="rounded">
+                    <span>Admin-Rechte</span>
+                </label>
+                <button
+                    type="submit"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg transition"
+                >
+                    Erstellen
+                </button>
+            </form>
+        </div>
+
+        <!-- Token List -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <div class="p-4 border-b border-slate-700">
+                <h2 class="text-lg font-semibold">Alle Tokens</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-slate-700/50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Name</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Token</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Typ</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Letzte Nutzung</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Status</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-700">
+                        {% for token in tokens %}
+                        <tr class="hover:bg-slate-700/50 transition">
+                            <td class="px-4 py-3 text-sm font-medium">{{ token.name }}</td>
+                            <td class="px-4 py-3 text-sm">
+                                <button
+                                    onclick="copyToken('{{ token.token }}')"
+                                    class="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-xs transition"
+                                    title="{{ token.token }}"
+                                >
+                                    Link kopieren
+                                </button>
+                            </td>
+                            <td class="px-4 py-3 text-sm">
+                                {% if token.is_admin %}
+                                <span class="bg-amber-900/50 text-amber-400 px-2 py-1 rounded text-xs">Admin</span>
+                                {% else %}
+                                <span class="bg-blue-900/50 text-blue-400 px-2 py-1 rounded text-xs">Share</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-400">
+                                {% if token.last_used_at %}
+                                {{ token.last_used_at.strftime('%d.%m.%Y %H:%M') }}
+                                {% else %}
+                                Nie
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-sm">
+                                {% if token.is_active %}
+                                <span class="text-emerald-400">Aktiv</span>
+                                {% else %}
+                                <span class="text-red-400">Deaktiviert</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-sm">
+                                <div class="flex gap-2 flex-wrap">
+                                    <a href="/admin/tokens/{{ token.id }}/logs" class="text-blue-400 hover:text-blue-300">
+                                        Logs
+                                    </a>
+                                    {% if token.is_active %}
+                                    <form method="POST" action="/admin/tokens/{{ token.id }}/regenerate" class="inline">
+                                        <button type="submit" class="text-amber-400 hover:text-amber-300">Neu generieren</button>
+                                    </form>
+                                    {% endif %}
+                                    {% if token.id == current_token_id %}
+                                    <span class="text-gray-500">(Du)</span>
+                                    {% elif token.is_active %}
+                                    <form method="POST" action="/admin/tokens/{{ token.id }}/revoke" class="inline">
+                                        <button type="submit" class="text-red-400 hover:text-red-300">Deaktivieren</button>
+                                    </form>
+                                    {% else %}
+                                    <form method="POST" action="/admin/tokens/{{ token.id }}/activate" class="inline">
+                                        <button type="submit" class="text-emerald-400 hover:text-emerald-300">Aktivieren</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function copyToken(token) {
+            const url = window.location.origin + '/?token=' + token;
+            navigator.clipboard.writeText(url);
+            alert('Link kopiert: ' + url);
+        }
+    </script>
+</body>
+</html>

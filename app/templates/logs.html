@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Logs - {{ token.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body { background: #0f172a; }</style>
+</head>
+<body class="bg-slate-900 text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <a href="/admin" class="text-blue-400 hover:text-blue-300 text-sm">&larr; Zurueck</a>
+                <h1 class="text-2xl font-bold text-white mt-2">Access Logs: {{ token.name }}</h1>
+            </div>
+        </div>
+
+        <!-- Token Info -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 mb-8">
+            <div class="flex gap-8 text-sm">
+                <div>
+                    <span class="text-gray-400">Token:</span>
+                    <code class="ml-2 bg-slate-700 px-2 py-1 rounded">{{ token.token[:16] }}...</code>
+                </div>
+                <div>
+                    <span class="text-gray-400">Erstellt:</span>
+                    <span class="ml-2">{{ token.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                </div>
+                <div>
+                    <span class="text-gray-400">Typ:</span>
+                    <span class="ml-2">{% if token.is_admin %}Admin{% else %}Share{% endif %}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Table -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <div class="p-4 border-b border-slate-700">
+                <h2 class="text-lg font-semibold">Letzte 100 Zugriffe</h2>
+            </div>
+            {% if logs %}
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-slate-700/50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Zeitpunkt</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">IP-Adresse</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">User Agent</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-700">
+                        {% for log in logs %}
+                        <tr class="hover:bg-slate-700/50 transition">
+                            <td class="px-4 py-3 text-sm">{{ log.accessed_at.strftime('%d.%m.%Y %H:%M:%S') }}</td>
+                            <td class="px-4 py-3 text-sm font-mono text-gray-400">{{ log.ip_address or '-' }}</td>
+                            <td class="px-4 py-3 text-sm text-gray-400 truncate max-w-xs" title="{{ log.user_agent }}">
+                                {{ (log.user_agent or '-')[:50] }}{% if log.user_agent and log.user_agent|length > 50 %}...{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-8 text-center text-gray-400">
+                Keine Zugriffe protokolliert.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

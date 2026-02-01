@@ -1,0 +1,45 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      influxdb:
+        condition: service_started
+
+  influxdb:
+    image: influxdb:1.11
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb
+    environment:
+      - INFLUXDB_DB=fitbit
+      - INFLUXDB_HTTP_AUTH_ENABLED=false
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=fitbit
+      - POSTGRES_PASSWORD=fitbit
+      - POSTGRES_DB=fitbit
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitbit"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  influxdb_data:
+  postgres_data:
+  app_data:

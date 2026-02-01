@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gewichtsverlauf</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            bg: '#0f172a',
+                            card: '#1e293b',
+                            border: '#334155'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background: #0f172a; }
+    </style>
+</head>
+<body class="dark bg-dark-bg text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- Header -->
+        <header class="mb-8 flex justify-between items-start">
+            <div>
+                <h1 class="text-3xl font-bold text-white mb-2">Gewichtsverlauf</h1>
+                <p class="text-gray-400" id="lastUpdate">Laden...</p>
+            </div>
+            <div class="flex gap-4 text-sm">
+                {% if is_admin %}
+                <a href="/admin" class="text-blue-400 hover:text-blue-300">Admin</a>
+                {% endif %}
+                <a href="/logout" class="text-gray-400 hover:text-gray-300">Logout</a>
+            </div>
+        </header>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
+                <p class="text-gray-400 text-sm">Aktuell</p>
+                <p class="text-2xl font-bold text-white" id="currentWeight">--</p>
+            </div>
+            <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
+                <p class="text-gray-400 text-sm">Ziel</p>
+                <p class="text-2xl font-bold text-emerald-400" id="goalWeight">--</p>
+            </div>
+            <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
+                <p class="text-gray-400 text-sm">Trend/Woche</p>
+                <p class="text-2xl font-bold" id="trend">--</p>
+            </div>
+            <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
+                <p class="text-gray-400 text-sm">Noch</p>
+                <p class="text-2xl font-bold text-amber-400" id="remaining">--</p>
+            </div>
+        </div>
+
+        <!-- Period Selector -->
+        <div class="flex flex-wrap gap-2 mb-4 items-center">
+            <button onclick="loadData(30)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="30">1M</button>
+            <button onclick="loadData(90)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="90">3M</button>
+            <button onclick="loadData(180)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="180">6M</button>
+            <button onclick="loadData(365)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="365">1J</button>
+            <button onclick="loadData(9999)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="9999">Alle</button>
+            <button onclick="toggleCustom()" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" id="customBtn">Custom</button>
+        </div>
+        <!-- Custom Date Range -->
+        <div id="customRange" class="hidden flex flex-wrap gap-2 mb-4 items-center bg-dark-card p-4 rounded-lg border border-dark-border">
+            <label class="text-gray-400 text-sm">Von:</label>
+            <input type="date" id="dateFrom" class="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white">
+            <label class="text-gray-400 text-sm">Bis:</label>
+            <input type="date" id="dateTo" class="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white">
+            <button onclick="loadCustomRange()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
+                Anzeigen
+            </button>
+        </div>
+
+        <!-- Chart -->
+        <div class="bg-dark-card rounded-xl p-4 border border-dark-border mb-8 relative">
+            <div class="absolute top-4 right-4 z-10">
+                <button onclick="resetZoom()" id="resetZoomBtn" class="hidden bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-1 rounded transition">
+                    Zoom zuruecksetzen
+                </button>
+            </div>
+            <p class="text-gray-500 text-xs mb-2">Tipp: Im Graph klicken & ziehen um zu zoomen</p>
+            <div style="height: 350px;">
+                <canvas id="weightChart"></canvas>
+            </div>
+        </div>
+
+        <!-- History Table -->
+        <div class="bg-dark-card rounded-xl border border-dark-border overflow-hidden">
+            <div class="p-4 border-b border-dark-border">
+                <h2 class="text-lg font-semibold">Letzte Eintraege</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-slate-800">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Datum</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Gewicht</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">BMI</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Fett %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTable" class="divide-y divide-dark-border">
+                        <!-- Filled by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Token is handled via cookie - no need for JS token management
+        let chart = null;
+        let goalWeight = null;
+
+        // Fetch helper - cookies are sent automatically
+        async function fetchAPI(endpoint) {
+            const response = await fetch(endpoint, { credentials: 'same-origin' });
+            if (!response.ok) throw new Error('API Error');
+            return response.json();
+        }
+
+        // Load goal
+        async function loadGoal() {
+            try {
+                const data = await fetchAPI('/api/goal');
+                if (data.goal) {
+                    goalWeight = data.goal.weight;
+                    document.getElementById('goalWeight').textContent = goalWeight + ' kg';
+                }
+            } catch (e) {
+                console.log('Could not load goal');
+            }
+        }
+
+        // Load data for period
+        async function loadData(days = 30) {
+            try {
+                // Update active button
+                document.querySelectorAll('.period-btn').forEach(btn => {
+                    btn.classList.remove('bg-blue-600', 'border-blue-500');
+                    if (parseInt(btn.dataset.days) === days) {
+                        btn.classList.add('bg-blue-600', 'border-blue-500');
+                    }
+                });
+
+                // Fetch weight and stats
+                const [weightData, stats] = await Promise.all([
+                    fetchAPI(`/api/weight?days=${days}`),
+                    fetchAPI(`/api/stats?days=${days}`)
+                ]);
+
+                // Update stats
+                if (stats.current) {
+                    document.getElementById('currentWeight').textContent = stats.current.toFixed(1) + ' kg';
+                }
+                if (stats.trend_per_week !== null) {
+                    const trendEl = document.getElementById('trend');
+                    const trend = stats.trend_per_week;
+                    trendEl.textContent = (trend > 0 ? '+' : '') + trend.toFixed(2) + ' kg';
+                    trendEl.className = 'text-2xl font-bold ' + (trend < 0 ? 'text-emerald-400' : 'text-red-400');
+                }
+                if (stats.current && goalWeight) {
+                    const remaining = stats.current - goalWeight;
+                    document.getElementById('remaining').textContent = remaining.toFixed(1) + ' kg';
+                }
+
+                // Update chart
+                updateChart(weightData.weight);
+
+                // Update table
+                updateTable(weightData.weight);
+
+                // Update last update time
+                if (weightData.weight.length > 0) {
+                    const lastEntry = weightData.weight[weightData.weight.length - 1];
+                    const lastDate = new Date(lastEntry.time);
+                    document.getElementById('lastUpdate').textContent =
+                        'Letztes Update: ' + lastDate.toLocaleDateString('de-DE') + ' ' + lastDate.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
+                }
+
+            } catch (e) {
+                console.error('Error loading data:', e);
+            }
+        }
+
+        // Update chart
+        function updateChart(data) {
+            const ctx = document.getElementById('weightChart').getContext('2d');
+
+            const chartData = data.map(d => ({
+                x: new Date(d.time),
+                y: d.weight,
+                bmi: d.bmi,
+                fat: d.fat
+            }));
+
+            if (chart) {
+                chart.data.datasets[0].data = chartData;
+                chart.update();
+                return;
+            }
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Gewicht',
+                        data: chartData,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointHoverRadius: 8,
+                        pointBackgroundColor: '#3b82f6',
+                        pointBorderColor: '#1e293b',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            titleColor: '#fff',
+                            bodyColor: '#94a3b8',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: false,
+                            callbacks: {
+                                title: function(context) {
+                                    const date = new Date(context[0].parsed.x);
+                                    return date.toLocaleDateString('de-DE', {
+                                        weekday: 'long',
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                    });
+                                },
+                                label: function(context) {
+                                    const point = context.raw;
+                                    const lines = [`Gewicht: ${point.y.toFixed(1)} kg`];
+                                    if (point.bmi) lines.push(`BMI: ${point.bmi.toFixed(1)}`);
+                                    if (point.fat) lines.push(`Fett: ${point.fat.toFixed(1)}%`);
+                                    return lines;
+                                }
+                            }
+                        },
+                        zoom: {
+                            zoom: {
+                                drag: {
+                                    enabled: true,
+                                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                    borderColor: 'rgba(59, 130, 246, 0.8)',
+                                    borderWidth: 1,
+                                    threshold: 10,
+                                },
+                                mode: 'x',
+                                onZoomComplete: function({chart}) {
+                                    document.getElementById('resetZoomBtn').classList.remove('hidden');
+                                }
+                            },
+                            pan: {
+                                enabled: true,
+                                mode: 'x',
+                                threshold: 10,
+                            },
+                            limits: {
+                                x: {min: 'original', max: 'original'},
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'day',
+                                displayFormats: {
+                                    day: 'dd.MM'
+                                }
+                            },
+                            grid: {
+                                color: '#334155'
+                            },
+                            ticks: {
+                                color: '#94a3b8'
+                            }
+                        },
+                        y: {
+                            grid: {
+                                color: '#334155'
+                            },
+                            ticks: {
+                                color: '#94a3b8',
+                                callback: function(value) {
+                                    return value.toFixed(1) + ' kg';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Add goal line if available
+            if (goalWeight) {
+                chart.options.plugins.annotation = {
+                    annotations: {
+                        goalLine: {
+                            type: 'line',
+                            yMin: goalWeight,
+                            yMax: goalWeight,
+                            borderColor: '#10b981',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            label: {
+                                display: true,
+                                content: 'Ziel: ' + goalWeight + ' kg',
+                                position: 'end'
+                            }
+                        }
+                    }
+                };
+                chart.update();
+            }
+        }
+
+        // Update table
+        function updateTable(data) {
+            const tbody = document.getElementById('historyTable');
+            // Show last 10 entries, newest first
+            const recent = data.slice(-10).reverse();
+
+            tbody.innerHTML = recent.map(entry => {
+                const date = new Date(entry.time);
+                return `
+                    <tr class="hover:bg-slate-800 transition">
+                        <td class="px-4 py-3 text-sm">
+                            ${date.toLocaleDateString('de-DE')} ${date.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'})}
+                        </td>
+                        <td class="px-4 py-3 text-sm font-medium">${entry.weight.toFixed(1)} kg</td>
+                        <td class="px-4 py-3 text-sm text-gray-400">${entry.bmi ? entry.bmi.toFixed(1) : '-'}</td>
+                        <td class="px-4 py-3 text-sm text-gray-400">${entry.fat ? entry.fat.toFixed(1) + '%' : '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Toggle custom date range
+        function toggleCustom() {
+            const customRange = document.getElementById('customRange');
+            const customBtn = document.getElementById('customBtn');
+            const isHidden = customRange.classList.contains('hidden');
+
+            if (isHidden) {
+                customRange.classList.remove('hidden');
+                customBtn.classList.add('bg-blue-600', 'border-blue-500');
+
+                // Set default dates
+                const today = new Date().toISOString().split('T')[0];
+                const yearAgo = new Date(Date.now() - 365*24*60*60*1000).toISOString().split('T')[0];
+                document.getElementById('dateTo').value = today;
+                document.getElementById('dateFrom').value = yearAgo;
+            } else {
+                customRange.classList.add('hidden');
+                customBtn.classList.remove('bg-blue-600', 'border-blue-500');
+            }
+        }
+
+        // Load custom date range
+        async function loadCustomRange() {
+            const from = document.getElementById('dateFrom').value;
+            const to = document.getElementById('dateTo').value;
+
+            if (!from || !to) {
+                alert('Bitte Von und Bis Datum eingeben');
+                return;
+            }
+
+            // Clear other button highlights
+            document.querySelectorAll('.period-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'border-blue-500');
+            });
+            document.getElementById('customBtn').classList.add('bg-blue-600', 'border-blue-500');
+
+            try {
+                const [weightData, stats] = await Promise.all([
+                    fetchAPI(`/api/weight?from=${from}&to=${to}`),
+                    fetchAPI(`/api/stats?from=${from}&to=${to}`)
+                ]);
+
+                // Update stats
+                if (stats.current) {
+                    document.getElementById('currentWeight').textContent = stats.current.toFixed(1) + ' kg';
+                }
+                if (stats.trend_per_week !== null) {
+                    const trendEl = document.getElementById('trend');
+                    const trend = stats.trend_per_week;
+                    trendEl.textContent = (trend > 0 ? '+' : '') + trend.toFixed(2) + ' kg';
+                    trendEl.className = 'text-2xl font-bold ' + (trend < 0 ? 'text-emerald-400' : 'text-red-400');
+                }
+                if (stats.current && goalWeight) {
+                    const remaining = stats.current - goalWeight;
+                    document.getElementById('remaining').textContent = remaining.toFixed(1) + ' kg';
+                }
+
+                updateChart(weightData.weight);
+                updateTable(weightData.weight);
+
+                if (weightData.weight.length > 0) {
+                    const lastEntry = weightData.weight[weightData.weight.length - 1];
+                    const lastDate = new Date(lastEntry.time);
+                    document.getElementById('lastUpdate').textContent =
+                        'Letztes Update: ' + lastDate.toLocaleDateString('de-DE') + ' ' + lastDate.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
+                }
+            } catch (e) {
+                console.error('Error loading custom range:', e);
+            }
+        }
+
+        // Reset chart zoom
+        function resetZoom() {
+            if (chart) {
+                chart.resetZoom();
+                document.getElementById('resetZoomBtn').classList.add('hidden');
+            }
+        }
+
+        // Initial load
+        loadGoal();
+        loadData(30);
+    </script>
+</body>
+</html>

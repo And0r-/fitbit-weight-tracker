@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token neu generiert</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body { background: #0f172a; }</style>
+</head>
+<body class="bg-slate-900 text-gray-100 min-h-screen flex items-center justify-center">
+    <div class="bg-slate-800 p-8 rounded-xl border border-slate-700 w-full max-w-lg">
+        <h1 class="text-2xl font-bold text-white mb-2">Token neu generiert</h1>
+        <p class="text-gray-400 mb-6">Der Token fuer <strong>{{ token.name }}</strong> wurde neu generiert.</p>
+
+        {% if is_own_token %}
+        <div class="bg-amber-900/30 border border-amber-700 text-amber-200 px-4 py-3 rounded-lg mb-6">
+            Dein eigener Token wurde geaendert. Der neue Token wurde automatisch in deinem Browser gespeichert.
+        </div>
+        {% endif %}
+
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-400 mb-2">Neuer Token (einmalige Anzeige!)</label>
+            <div class="flex gap-2">
+                <input
+                    type="text"
+                    value="{{ new_token }}"
+                    readonly
+                    id="tokenInput"
+                    class="flex-1 px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white font-mono text-sm"
+                >
+                <button
+                    onclick="copyToken()"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
+                >
+                    Kopieren
+                </button>
+            </div>
+        </div>
+
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-400 mb-2">Vollstaendiger Link</label>
+            <div class="flex gap-2">
+                <input
+                    type="text"
+                    value="{{ request.url.scheme }}://{{ request.url.netloc }}/?token={{ new_token }}"
+                    readonly
+                    id="linkInput"
+                    class="flex-1 px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white font-mono text-sm"
+                >
+                <button
+                    onclick="copyLink()"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition"
+                >
+                    Link kopieren
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-red-900/30 border border-red-700 text-red-200 px-4 py-3 rounded-lg mb-6">
+            <strong>Wichtig:</strong> Dieser Token wird nur einmal angezeigt! Kopiere ihn jetzt und speichere ihn sicher.
+        </div>
+
+        <a href="/admin" class="block text-center bg-slate-700 hover:bg-slate-600 text-white py-3 px-4 rounded-lg transition">
+            Zurueck zum Admin
+        </a>
+    </div>
+
+    <script>
+        function copyToken() {
+            const input = document.getElementById('tokenInput');
+            navigator.clipboard.writeText(input.value);
+            alert('Token kopiert!');
+        }
+
+        function copyLink() {
+            const input = document.getElementById('linkInput');
+            navigator.clipboard.writeText(input.value);
+            alert('Link kopiert!');
+        }
+    </script>
+</body>
+</html>
