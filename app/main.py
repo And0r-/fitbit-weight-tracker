@@ -16,6 +16,7 @@ from .database import get_db, init_db, SessionLocal
 from .fitbit import fitbit_client
 from .influxdb_client import weight_db
 from .models import AccessLog, ShareToken
+from .oura import oura_client
 from .scheduler import sync_scheduler
 
 # Configure logging
@@ -478,3 +479,96 @@ async def trigger_sync(
     # Sync all data (20 years should cover everything)
     await sync_scheduler.run_full_sync(days=20*365)
     return RedirectResponse("/admin", status_code=303)
+
+
+# ============================================
+# Oura Ring API
+# ============================================
+
+
+@app.get("/api/oura/heartrate")
+async def oura_heartrate(
+    request: Request,
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get Oura heart rate data for a specific date."""
+    share_token = get_token_from_request(request, token, db)
+    if not share_token:
+        raise HTTPException(status_code=401, detail="Token required")
+
+    if not oura_client.is_authenticated():
+        raise HTTPException(status_code=503, detail="Oura not connected")
+
+    try:
+        data = await oura_client.get_heartrate(date)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/oura/sleep")
+async def oura_sleep(
+    request: Request,
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get Oura sleep data for a specific date."""
+    share_token = get_token_from_request(request, token, db)
+    if not share_token:
+        raise HTTPException(status_code=401, detail="Token required")
+
+    if not oura_client.is_authenticated():
+        raise HTTPException(status_code=503, detail="Oura not connected")
+
+    try:
+        data = await oura_client.get_sleep(date)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/oura/readiness")
+async def oura_readiness(
+    request: Request,
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get Oura readiness data for a specific date."""
+    share_token = get_token_from_request(request, token, db)
+    if not share_token:
+        raise HTTPException(status_code=401, detail="Token required")
+
+    if not oura_client.is_authenticated():
+        raise HTTPException(status_code=503, detail="Oura not connected")
+
+    try:
+        data = await oura_client.get_readiness(date)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/oura/daily")
+async def oura_daily(
+    request: Request,
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get combined Oura daily view (sleep, readiness, stress, spo2)."""
+    share_token = get_token_from_request(request, token, db)
+    if not share_token:
+        raise HTTPException(status_code=401, detail="Token required")
+
+    if not oura_client.is_authenticated():
+        raise HTTPException(status_code=503, detail="Oura not connected")
+
+    try:
+        data = await oura_client.get_daily(date)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
