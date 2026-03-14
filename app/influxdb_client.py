@@ -387,6 +387,42 @@ class WeightDatabase:
         result = self._query(query)
         return list(result.get_points())
 
+    def write_workouts_batch(self, entries: list[dict]):
+        """Write workout data to InfluxDB."""
+        points = []
+        for entry in entries:
+            start = entry.get("start_datetime")
+            if not start:
+                continue
+            fields = {}
+            if "calories" in entry and entry["calories"] is not None:
+                fields["calories"] = float(entry["calories"])
+            if "intensity" in entry and entry["intensity"] is not None:
+                fields["intensity"] = str(entry["intensity"])
+            if "distance" in entry and entry["distance"] is not None:
+                fields["distance"] = float(entry["distance"])
+            activity = entry.get("activity", "unknown")
+            # Store activity as field too so we can query it
+            fields["activity"] = str(activity)
+            if fields:
+                points.append({
+                    "measurement": "oura_workout",
+                    "tags": {"source": "oura", "activity": str(activity)},
+                    "time": start,
+                    "fields": fields,
+                })
+        self._write_points_safe(points)
+
+    def get_workout_history(self, days: int = 7) -> list[dict]:
+        """Get workout data for the last N days."""
+        query = f"""
+            SELECT * FROM oura_workout
+            WHERE time > now() - {days}d
+            ORDER BY time ASC
+        """
+        result = self._query(query)
+        return list(result.get_points())
+
 
 # Singleton instance
 weight_db = WeightDatabase()

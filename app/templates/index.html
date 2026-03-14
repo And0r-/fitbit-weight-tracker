@@ -497,6 +497,20 @@
                         </div>`;
                     }
 
+                    // Naps for this day
+                    const dayStr = day.time.split('T')[0];
+                    const naps = sessions.filter(s => s.type !== 'long_sleep' && s.time && s.time.startsWith(dayStr));
+                    if (naps.length > 0) {
+                        const typeLabels = { short_sleep: 'Nickerchen', late_nap: 'Spaetes Nickerchen', rest: 'Ruhezeit' };
+                        html += `<div class="mt-3 pt-3 border-t border-dark-border">`;
+                        for (const nap of naps) {
+                            const napDur = nap.total_sleep_duration || 0;
+                            const label = typeLabels[nap.type] || nap.type;
+                            html += `<p class="text-sm text-gray-400"><span class="text-purple-400">${label}</span>: ${formatDuration(napDur)}</p>`;
+                        }
+                        html += `</div>`;
+                    }
+
                     html += '</div>';
                 }
                 html += '</div>';

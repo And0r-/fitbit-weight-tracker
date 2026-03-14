@@ -18,6 +18,7 @@ from .influxdb_client import weight_db
 from .models import AccessLog, ShareToken
 from .oura import oura_client
 from .scheduler import sync_scheduler
+from .summary import build_health_summary
 
 # Configure logging
 logging.basicConfig(
@@ -402,6 +403,44 @@ async def activate_token(
     return RedirectResponse("/admin", status_code=303)
 
 
+@app.post("/admin/tokens/{token_id}/toggle-oura")
+async def toggle_oura(
+    request: Request,
+    token_id: int,
+    db: Session = Depends(get_db),
+):
+    """Toggle Oura access for a token."""
+    share_token = get_token_from_request(request, None, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    token = db.query(ShareToken).filter(ShareToken.id == token_id).first()
+    if token:
+        token.can_view_oura = not token.can_view_oura
+        db.commit()
+
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/tokens/{token_id}/toggle-admin")
+async def toggle_admin(
+    request: Request,
+    token_id: int,
+    db: Session = Depends(get_db),
+):
+    """Toggle admin status for a token."""
+    share_token = get_token_from_request(request, None, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    token = db.query(ShareToken).filter(ShareToken.id == token_id).first()
+    if token and token.id != share_token.id:  # Can't remove own admin
+        token.is_admin = not token.is_admin
+        db.commit()
+
+    return RedirectResponse("/admin", status_code=303)
+
+
 @app.post("/admin/tokens/{token_id}/regenerate")
 async def regenerate_token(
     request: Request,
@@ -618,3 +657,49 @@ async def get_oura_stress(
     share_token = get_token_from_request(request, token, db)
     _require_oura(share_token)
     return weight_db.get_stress_history(days)
+
+
+# ============================================
+# Health Summary (for AI assistants)
+# ============================================
+
+
+@app.get("/api/summary")
+async def get_health_summary(
+    request: Request,
+    token: str | None = Query(None),
+    sync: bool = Query(default=True),
+    db: Session = Depends(get_db),
+):
+    """Compact health summary for AI consumption.
+
+    Triggers a fresh sync of weight + Oura data before returning.
+    Set ?sync=false to skip the sync and return cached data.
+    """
+    share_token = get_token_from_request(request, token, db)
+    _require_oura(share_token)
+
+    # Trigger fresh sync
+    if sync:
+        if fitbit_client.is_authenticated():
+            try:
+                await sync_scheduler.run_now(days=7)
+            except Exception as e:
+                logger.error(f"Summary weight sync failed: {e}")
+        if oura_client.is_authenticated():
+            try:
+                await sync_scheduler.run_oura_now(days=3)
+            except Exception as e:
+                logger.error(f"Summary oura sync failed: {e}")
+
+    # Get goal weight from Fitbit
+    goal = None
+    if fitbit_client.is_authenticated():
+        try:
+            goal_data = await fitbit_client.get_weight_goal()
+            if goal_data:
+                goal = goal_data.get("weight")
+        except Exception:
+            pass
+
+    return await build_health_summary(goal_weight=goal)

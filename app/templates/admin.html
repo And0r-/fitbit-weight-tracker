@@ -140,14 +140,16 @@
                             </td>
                             <td class="px-4 py-3 text-sm">
                                 <div class="flex gap-1 flex-wrap">
-                                    {% if token.is_admin %}
-                                    <span class="bg-amber-900/50 text-amber-400 px-2 py-1 rounded text-xs">Admin</span>
+                                    {% if token.id == current_token_id %}
+                                        <span class="bg-amber-900/50 text-amber-400 px-2 py-1 rounded text-xs">Admin</span>
                                     {% else %}
-                                    <span class="bg-blue-900/50 text-blue-400 px-2 py-1 rounded text-xs">Share</span>
+                                    <form method="POST" action="/admin/tokens/{{ token.id }}/toggle-admin" class="inline">
+                                        <button type="submit" class="{{ 'bg-amber-900/50 text-amber-400' if token.is_admin else 'bg-slate-700 text-gray-500' }} px-2 py-1 rounded text-xs hover:opacity-80 transition">Admin</button>
+                                    </form>
                                     {% endif %}
-                                    {% if token.can_view_oura %}
-                                    <span class="bg-purple-900/50 text-purple-400 px-2 py-1 rounded text-xs">Oura</span>
-                                    {% endif %}
+                                    <form method="POST" action="/admin/tokens/{{ token.id }}/toggle-oura" class="inline">
+                                        <button type="submit" class="{{ 'bg-purple-900/50 text-purple-400' if token.can_view_oura else 'bg-slate-700 text-gray-500' }} px-2 py-1 rounded text-xs hover:opacity-80 transition">Oura</button>
+                                    </form>
                                 </div>
                             </td>
                             <td class="px-4 py-3 text-sm text-gray-400">

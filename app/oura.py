@@ -181,6 +181,11 @@ class OuraClient:
             "/daily_spo2", {"start_date": start_date, "end_date": end_date}
         )
 
+    async def get_workouts(self, start_date: str, end_date: str) -> list[dict]:
+        return await self._request_paginated(
+            "/workout", {"start_date": start_date, "end_date": end_date}
+        )
+
     def is_authenticated(self) -> bool:
         return self.tokens is not None and "access_token" in self.tokens
 
