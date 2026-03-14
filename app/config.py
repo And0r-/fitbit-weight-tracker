@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Sync
     sync_interval_hours: int = 4
 
+    # UI: default period preset (1M, 3M, 6M, 1J, Alle)
+    default_period: str = "3M"
+
     # Security (set SECURE_COOKIES=false for local HTTP dev)
     secure_cookies: bool = True
 

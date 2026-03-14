@@ -67,11 +67,11 @@
 
         <!-- Period Selector -->
         <div class="flex flex-wrap gap-2 mb-4 items-center">
-            <button onclick="loadData(30)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="30">1M</button>
-            <button onclick="loadData(90)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="90">3M</button>
-            <button onclick="loadData(180)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="180">6M</button>
-            <button onclick="loadData(365)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="365">1J</button>
-            <button onclick="loadData(9999)" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-days="9999">Alle</button>
+            <button onclick="loadPeriod('1M')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="1M">1M</button>
+            <button onclick="loadPeriod('3M')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="3M">3M</button>
+            <button onclick="loadPeriod('6M')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="6M">6M</button>
+            <button onclick="loadPeriod('1J')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="1J">1J</button>
+            <button onclick="loadPeriod('Alle')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="Alle">Alle</button>
             <button onclick="toggleCustom()" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" id="customBtn">Custom</button>
         </div>
         <!-- Custom Date Range -->
@@ -126,6 +126,9 @@
         let chart = null;
         let goalWeight = null;
 
+        const PERIOD_DAYS = { '1M': 30, '3M': 90, '6M': 180, '1J': 365, 'Alle': 9999 };
+        const DEFAULT_PERIOD = '{{ default_period }}';
+
         // Fetch helper - cookies are sent automatically
         async function fetchAPI(endpoint) {
             const response = await fetch(endpoint, { credentials: 'same-origin' });
@@ -146,13 +149,19 @@
             }
         }
 
+        // Load data for named period
+        function loadPeriod(period) {
+            const days = PERIOD_DAYS[period] || 90;
+            loadData(days, period);
+        }
+
         // Load data for period
-        async function loadData(days = 30) {
+        async function loadData(days = 90, period = null) {
             try {
                 // Update active button
                 document.querySelectorAll('.period-btn').forEach(btn => {
                     btn.classList.remove('bg-blue-600', 'border-blue-500');
-                    if (parseInt(btn.dataset.days) === days) {
+                    if (period && btn.dataset.period === period) {
                         btn.classList.add('bg-blue-600', 'border-blue-500');
                     }
                 });
@@ -448,9 +457,8 @@
             }
         }
 
-        // Initial load
-        loadGoal();
-        loadData(30);
+        // Initial load - goal must resolve before period data
+        loadGoal().then(() => loadPeriod(DEFAULT_PERIOD));
     </script>
 </body>
 </html>

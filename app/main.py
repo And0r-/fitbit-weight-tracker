@@ -145,7 +145,12 @@ async def index(
 
     response = templates.TemplateResponse(
         "index.html",
-        {"request": request, "token": share_token.token, "is_admin": share_token.is_admin},
+        {
+            "request": request,
+            "token": share_token.token,
+            "is_admin": share_token.is_admin,
+            "default_period": settings.default_period,
+        },
     )
     # Set cookie for future visits
     response.set_cookie("token", share_token.token, httponly=True, secure=settings.secure_cookies, samesite="lax", max_age=60*60*24*365)
