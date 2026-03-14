@@ -8,6 +8,13 @@
     <style>body { background: #0f172a; }</style>
 </head>
 <body class="bg-slate-900 text-gray-100 min-h-screen flex items-center justify-center">
+    <script>
+        // Auto-login from localStorage if cookie was lost
+        const saved = localStorage.getItem('token');
+        if (saved && !new URLSearchParams(window.location.search).has('error')) {
+            window.location.href = '/?token=' + saved;
+        }
+    </script>
     <div class="bg-slate-800 p-8 rounded-xl border border-slate-700 w-full max-w-md">
         <h1 class="text-2xl font-bold text-white mb-6 text-center">Gewichtsverlauf</h1>
 

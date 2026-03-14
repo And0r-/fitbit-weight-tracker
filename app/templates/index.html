@@ -41,7 +41,7 @@
                 {% if is_admin %}
                 <a href="/admin" class="text-blue-400 hover:text-blue-300">Admin</a>
                 {% endif %}
-                <a href="/logout" class="text-gray-400 hover:text-gray-300">Logout</a>
+                <a href="/logout" onclick="localStorage.removeItem('token')" class="text-gray-400 hover:text-gray-300">Logout</a>
             </div>
         </header>
 
@@ -122,16 +122,20 @@
     </div>
 
     <script>
-        // Token is handled via cookie - no need for JS token management
+        // Persist token in localStorage (resilient against browser cookie cleanup)
+        const TOKEN = '{{ token }}';
+        localStorage.setItem('token', TOKEN);
+
         let chart = null;
         let goalWeight = null;
 
         const PERIOD_DAYS = { '1M': 30, '3M': 90, '6M': 180, '1J': 365, 'Alle': 9999 };
         const DEFAULT_PERIOD = '{{ default_period }}';
 
-        // Fetch helper - cookies are sent automatically
+        // Fetch helper - sends token as query param
         async function fetchAPI(endpoint) {
-            const response = await fetch(endpoint, { credentials: 'same-origin' });
+            const sep = endpoint.includes('?') ? '&' : '?';
+            const response = await fetch(endpoint + sep + 'token=' + TOKEN);
             if (!response.ok) throw new Error('API Error');
             return response.json();
         }
