@@ -22,8 +22,16 @@ class Settings(BaseSettings):
     # Sync
     sync_interval_minutes: int = 30
 
+    # Oura OAuth
+    oura_client_id: str = ""
+    oura_client_secret: str = ""
+    oura_redirect_uri: str = "http://localhost:8080/oura/callback"
+
     # UI: default period preset (1M, 3M, 6M, 1J, Alle)
     default_period: str = "3M"
+
+    # Timezone for display
+    timezone: str = "Europe/Zurich"
 
     # Security (set SECURE_COOKIES=false for local HTTP dev)
     secure_cookies: bool = True

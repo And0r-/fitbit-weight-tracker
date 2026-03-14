@@ -1,4 +1,4 @@
-"""Background scheduler for automatic Fitbit sync."""
+"""Background scheduler for automatic Fitbit and Oura sync."""
 import logging
 from datetime import datetime, timedelta
 
@@ -8,8 +8,14 @@ from apscheduler.triggers.interval import IntervalTrigger
 from .config import settings
 from .fitbit import fitbit_client
 from .influxdb_client import weight_db
+from .oura import oura_client
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================
+# Fitbit Sync
+# ============================================
 
 
 async def sync_weight_data(days: int = 7):
@@ -81,6 +87,63 @@ async def sync_full_history(days: int = 365):
         return total_entries
 
 
+# ============================================
+# Oura Sync
+# ============================================
+
+
+async def sync_oura_data(days: int = 3):
+    """Sync Oura Ring data to InfluxDB."""
+    logger.info(f"Starting Oura sync (last {days} days)...")
+
+    if not oura_client.is_authenticated():
+        logger.warning("Oura not authenticated - skipping sync")
+        return
+
+    start_date = oura_client._local_date(days)
+    end_date = oura_client._local_today()
+
+    try:
+        # Sleep
+        daily_sleep = await oura_client.get_daily_sleep(start_date, end_date)
+        sleep_sessions = await oura_client.get_sleep(start_date, end_date)
+        weight_db.write_sleep_batch(daily_sleep, sleep_sessions)
+        logger.info(f"Oura sleep: {len(daily_sleep)} daily scores, {len(sleep_sessions)} sessions")
+    except Exception as e:
+        logger.error(f"Oura sleep sync failed: {e}")
+
+    try:
+        # Readiness
+        readiness = await oura_client.get_daily_readiness(start_date, end_date)
+        weight_db.write_readiness_batch(readiness)
+        logger.info(f"Oura readiness: {len(readiness)} entries")
+    except Exception as e:
+        logger.error(f"Oura readiness sync failed: {e}")
+
+    try:
+        # Heart rate
+        heart_rate = await oura_client.get_heart_rate(start_date, end_date)
+        weight_db.write_heart_rate_batch(heart_rate)
+        logger.info(f"Oura heart rate: {len(heart_rate)} entries")
+    except Exception as e:
+        logger.error(f"Oura heart rate sync failed: {e}")
+
+    try:
+        # Stress
+        stress = await oura_client.get_daily_stress(start_date, end_date)
+        weight_db.write_stress_batch(stress)
+        logger.info(f"Oura stress: {len(stress)} entries")
+    except Exception as e:
+        logger.error(f"Oura stress sync failed: {e}")
+
+
+async def sync_oura_full(days: int = 30):
+    """Sync full Oura history."""
+    logger.info(f"Starting FULL Oura sync ({days} days)...")
+    await sync_oura_data(days)
+    logger.info("Full Oura sync complete")
+
+
 class SyncScheduler:
     """Manages background sync jobs."""
 
@@ -101,6 +164,14 @@ class SyncScheduler:
             replace_existing=True,
         )
 
+        self.scheduler.add_job(
+            sync_oura_data,
+            trigger=IntervalTrigger(minutes=settings.sync_interval_minutes),
+            id="oura_sync",
+            name="Oura Ring Sync",
+            replace_existing=True,
+        )
+
         self.scheduler.start()
         self._started = True
         logger.info(
@@ -115,12 +186,20 @@ class SyncScheduler:
             logger.info("Scheduler stopped")
 
     async def run_now(self, days: int = 7):
-        """Trigger immediate sync."""
+        """Trigger immediate Fitbit sync."""
         return await sync_weight_data(days)
 
     async def run_full_sync(self, days: int = 365):
-        """Trigger full history sync."""
+        """Trigger full Fitbit history sync."""
         return await sync_full_history(days)
+
+    async def run_oura_now(self, days: int = 3):
+        """Trigger immediate Oura sync."""
+        return await sync_oura_data(days)
+
+    async def run_oura_full(self, days: int = 30):
+        """Trigger full Oura history sync."""
+        return await sync_oura_full(days)
 
 
 # Singleton instance

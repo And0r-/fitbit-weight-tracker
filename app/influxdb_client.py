@@ -208,6 +208,185 @@ class WeightDatabase:
         history = self.get_weight_range(from_date, to_date)
         return self._calculate_stats(history)
 
+    # ============================================
+    # Oura Ring Data
+    # ============================================
+
+    def _write_points_safe(self, points: list[dict]):
+        """Write points with reconnect on failure."""
+        if not points:
+            return
+        try:
+            self.client.write_points(points)
+        except Exception:
+            self._reset_client()
+            raise
+
+    def write_sleep_batch(self, daily_sleep: list[dict], sleep_sessions: list[dict]):
+        """Write sleep data to InfluxDB."""
+        points = []
+
+        # Daily sleep scores (one per day)
+        for entry in daily_sleep:
+            day = entry.get("day")
+            if not day:
+                continue
+            fields = {"score": int(entry.get("score", 0))}
+            contributors = entry.get("contributors", {})
+            for key in ["deep_sleep", "efficiency", "latency", "rem_sleep",
+                        "restfulness", "timing", "total_sleep"]:
+                if key in contributors and contributors[key] is not None:
+                    fields[f"contrib_{key}"] = int(contributors[key])
+            points.append({
+                "measurement": "oura_daily_sleep",
+                "tags": {"source": "oura"},
+                "time": f"{day}T00:00:00Z",
+                "fields": fields,
+            })
+
+        # Sleep sessions (detailed per-session data)
+        for entry in sleep_sessions:
+            bedtime_start = entry.get("bedtime_start")
+            if not bedtime_start:
+                continue
+            sleep_type = entry.get("type", "unknown")
+            fields = {}
+            for key in ["total_sleep_duration", "deep_sleep_duration",
+                        "rem_sleep_duration", "light_sleep_duration"]:
+                if key in entry and entry[key] is not None:
+                    fields[key] = int(entry[key])
+            if "efficiency" in entry and entry["efficiency"] is not None:
+                fields["efficiency"] = int(entry["efficiency"])
+            hr = entry.get("heart_rate", {})
+            if isinstance(hr, dict) and "lowest" in hr:
+                fields["lowest_heart_rate"] = int(hr["lowest"])
+            if "average_heart_rate" in entry and entry["average_heart_rate"] is not None:
+                fields["average_heart_rate"] = float(entry["average_heart_rate"])
+            if "average_hrv" in entry and entry["average_hrv"] is not None:
+                fields["average_hrv"] = float(entry["average_hrv"])
+
+            if fields:
+                points.append({
+                    "measurement": "oura_sleep",
+                    "tags": {"source": "oura", "type": sleep_type},
+                    "time": bedtime_start,
+                    "fields": fields,
+                })
+
+        self._write_points_safe(points)
+
+    def write_readiness_batch(self, entries: list[dict]):
+        """Write readiness data to InfluxDB."""
+        points = []
+        for entry in entries:
+            day = entry.get("day")
+            if not day:
+                continue
+            fields = {"score": int(entry.get("score", 0))}
+            contributors = entry.get("contributors", {})
+            for key in ["activity_balance", "body_temperature", "hrv_balance",
+                        "previous_day_activity", "previous_night", "recovery_index",
+                        "resting_heart_rate", "sleep_balance"]:
+                if key in contributors and contributors[key] is not None:
+                    fields[f"contrib_{key}"] = int(contributors[key])
+            if "temperature_deviation" in entry and entry["temperature_deviation"] is not None:
+                fields["temperature_deviation"] = float(entry["temperature_deviation"])
+            points.append({
+                "measurement": "oura_readiness",
+                "tags": {"source": "oura"},
+                "time": f"{day}T00:00:00Z",
+                "fields": fields,
+            })
+        self._write_points_safe(points)
+
+    def write_heart_rate_batch(self, entries: list[dict]):
+        """Write heart rate data to InfluxDB."""
+        points = []
+        for entry in entries:
+            ts = entry.get("timestamp")
+            if not ts:
+                continue
+            fields = {"bpm": int(entry["bpm"])}
+            points.append({
+                "measurement": "oura_heart_rate",
+                "tags": {"source": entry.get("source", "unknown")},
+                "time": ts,
+                "fields": fields,
+            })
+        self._write_points_safe(points)
+
+    def write_stress_batch(self, entries: list[dict]):
+        """Write stress data to InfluxDB."""
+        points = []
+        for entry in entries:
+            day = entry.get("day")
+            if not day:
+                continue
+            fields = {}
+            if "stress_high" in entry and entry["stress_high"] is not None:
+                fields["stress_high"] = int(entry["stress_high"])
+            if "recovery_high" in entry and entry["recovery_high"] is not None:
+                fields["recovery_high"] = int(entry["recovery_high"])
+            if "day_summary" in entry and entry["day_summary"] is not None:
+                fields["day_summary"] = str(entry["day_summary"])
+            if fields:
+                points.append({
+                    "measurement": "oura_stress",
+                    "tags": {"source": "oura"},
+                    "time": f"{day}T00:00:00Z",
+                    "fields": fields,
+                })
+        self._write_points_safe(points)
+
+    def get_sleep_history(self, days: int = 3) -> dict:
+        """Get sleep scores and sessions for the last N days."""
+        daily_q = f"""
+            SELECT * FROM oura_daily_sleep
+            WHERE time > now() - {days}d
+            ORDER BY time ASC
+        """
+        sessions_q = f"""
+            SELECT * FROM oura_sleep
+            WHERE time > now() - {days}d
+            ORDER BY time ASC
+        """
+        daily_result = self._query(daily_q)
+        sessions_result = self._query(sessions_q)
+        return {
+            "daily": list(daily_result.get_points()),
+            "sessions": list(sessions_result.get_points()),
+        }
+
+    def get_readiness_history(self, days: int = 3) -> list[dict]:
+        """Get readiness data for the last N days."""
+        query = f"""
+            SELECT * FROM oura_readiness
+            WHERE time > now() - {days}d
+            ORDER BY time ASC
+        """
+        result = self._query(query)
+        return list(result.get_points())
+
+    def get_heart_rate_history(self, hours: int = 24) -> list[dict]:
+        """Get heart rate data for the last N hours."""
+        query = f"""
+            SELECT bpm, source FROM oura_heart_rate
+            WHERE time > now() - {hours}h
+            ORDER BY time ASC
+        """
+        result = self._query(query)
+        return list(result.get_points())
+
+    def get_stress_history(self, days: int = 1) -> list[dict]:
+        """Get stress data for the last N days."""
+        query = f"""
+            SELECT * FROM oura_stress
+            WHERE time > now() - {days}d
+            ORDER BY time ASC
+        """
+        result = self._query(query)
+        return list(result.get_points())
+
 
 # Singleton instance
 weight_db = WeightDatabase()

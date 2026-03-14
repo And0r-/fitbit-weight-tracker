@@ -27,14 +27,16 @@
     </script>
     <style>
         body { background: #0f172a; }
+        .sleep-bar { height: 24px; border-radius: 6px; overflow: hidden; display: flex; }
+        .sleep-bar > div { height: 100%; }
     </style>
 </head>
 <body class="dark bg-dark-bg text-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8 max-w-4xl">
         <!-- Header -->
-        <header class="mb-8 flex justify-between items-start">
+        <header class="mb-6 flex justify-between items-start">
             <div>
-                <h1 class="text-3xl font-bold text-white mb-2">Gewichtsverlauf</h1>
+                <h1 class="text-3xl font-bold text-white mb-2">fit.fdh.li</h1>
                 <p class="text-gray-400" id="lastUpdate">Laden...</p>
             </div>
             <div class="flex gap-4 text-sm">
@@ -45,94 +47,146 @@
             </div>
         </header>
 
-        <!-- Stats Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
-                <p class="text-gray-400 text-sm">Aktuell</p>
-                <p class="text-2xl font-bold text-white" id="currentWeight">--</p>
+        {% if can_view_oura %}
+        <!-- Tab Navigation -->
+        <nav class="flex gap-1 mb-8 bg-dark-card rounded-xl p-1 border border-dark-border">
+            <button onclick="switchTab('weight')" class="tab-btn flex-1 px-4 py-2 rounded-lg text-sm font-medium transition" data-tab="weight">Gewicht</button>
+            <button onclick="switchTab('sleep')" class="tab-btn flex-1 px-4 py-2 rounded-lg text-sm font-medium transition" data-tab="sleep">Schlaf</button>
+            <button onclick="switchTab('readiness')" class="tab-btn flex-1 px-4 py-2 rounded-lg text-sm font-medium transition" data-tab="readiness">Readiness</button>
+            <button onclick="switchTab('heartrate')" class="tab-btn flex-1 px-4 py-2 rounded-lg text-sm font-medium transition" data-tab="heartrate">Heart Rate</button>
+        </nav>
+        {% endif %}
+
+        <!-- ============================================ -->
+        <!-- TAB: Weight -->
+        <!-- ============================================ -->
+        <div id="tab-weight" class="tab-content">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
+                    <p class="text-gray-400 text-sm">Aktuell</p>
+                    <p class="text-2xl font-bold text-white" id="currentWeight">--</p>
+                </div>
+                <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
+                    <p class="text-gray-400 text-sm">Ziel</p>
+                    <p class="text-2xl font-bold text-emerald-400" id="goalWeight">--</p>
+                </div>
+                <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
+                    <p class="text-gray-400 text-sm">Trend/Woche</p>
+                    <p class="text-2xl font-bold" id="trend">--</p>
+                </div>
+                <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
+                    <p class="text-gray-400 text-sm">Noch</p>
+                    <p class="text-2xl font-bold text-amber-400" id="remaining">--</p>
+                </div>
             </div>
-            <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
-                <p class="text-gray-400 text-sm">Ziel</p>
-                <p class="text-2xl font-bold text-emerald-400" id="goalWeight">--</p>
+
+            <!-- Period Selector -->
+            <div class="flex flex-wrap gap-2 mb-4 items-center">
+                <button onclick="loadPeriod('1M')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="1M">1M</button>
+                <button onclick="loadPeriod('3M')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="3M">3M</button>
+                <button onclick="loadPeriod('6M')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="6M">6M</button>
+                <button onclick="loadPeriod('1J')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="1J">1J</button>
+                <button onclick="loadPeriod('Alle')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="Alle">Alle</button>
+                <button onclick="toggleCustom()" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" id="customBtn">Custom</button>
             </div>
-            <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
-                <p class="text-gray-400 text-sm">Trend/Woche</p>
-                <p class="text-2xl font-bold" id="trend">--</p>
+            <div id="customRange" class="hidden flex flex-wrap gap-2 mb-4 items-center bg-dark-card p-4 rounded-lg border border-dark-border">
+                <label class="text-gray-400 text-sm">Von:</label>
+                <input type="date" id="dateFrom" class="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white">
+                <label class="text-gray-400 text-sm">Bis:</label>
+                <input type="date" id="dateTo" class="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white">
+                <button onclick="loadCustomRange()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">Anzeigen</button>
             </div>
-            <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
-                <p class="text-gray-400 text-sm">Noch</p>
-                <p class="text-2xl font-bold text-amber-400" id="remaining">--</p>
+
+            <!-- Chart -->
+            <div class="bg-dark-card rounded-xl p-4 border border-dark-border mb-8 relative">
+                <div class="absolute top-4 right-4 z-10">
+                    <button onclick="resetZoom()" id="resetZoomBtn" class="hidden bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-1 rounded transition">Zoom zuruecksetzen</button>
+                </div>
+                <p class="text-gray-500 text-xs mb-2">Tipp: Im Graph klicken & ziehen um zu zoomen</p>
+                <div style="height: 350px;">
+                    <canvas id="weightChart"></canvas>
+                </div>
+            </div>
+
+            <!-- History Table -->
+            <div class="bg-dark-card rounded-xl border border-dark-border overflow-hidden">
+                <div class="p-4 border-b border-dark-border">
+                    <h2 class="text-lg font-semibold">Letzte Eintraege</h2>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-slate-800">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Datum</th>
+                                <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Gewicht</th>
+                                <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">BMI</th>
+                                <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Fett %</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTable" class="divide-y divide-dark-border"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
-        <!-- Period Selector -->
-        <div class="flex flex-wrap gap-2 mb-4 items-center">
-            <button onclick="loadPeriod('1M')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="1M">1M</button>
-            <button onclick="loadPeriod('3M')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="3M">3M</button>
-            <button onclick="loadPeriod('6M')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="6M">6M</button>
-            <button onclick="loadPeriod('1J')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="1J">1J</button>
-            <button onclick="loadPeriod('Alle')" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-period="Alle">Alle</button>
-            <button onclick="toggleCustom()" class="period-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" id="customBtn">Custom</button>
-        </div>
-        <!-- Custom Date Range -->
-        <div id="customRange" class="hidden flex flex-wrap gap-2 mb-4 items-center bg-dark-card p-4 rounded-lg border border-dark-border">
-            <label class="text-gray-400 text-sm">Von:</label>
-            <input type="date" id="dateFrom" class="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white">
-            <label class="text-gray-400 text-sm">Bis:</label>
-            <input type="date" id="dateTo" class="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white">
-            <button onclick="loadCustomRange()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
-                Anzeigen
-            </button>
-        </div>
-
-        <!-- Chart -->
-        <div class="bg-dark-card rounded-xl p-4 border border-dark-border mb-8 relative">
-            <div class="absolute top-4 right-4 z-10">
-                <button onclick="resetZoom()" id="resetZoomBtn" class="hidden bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-1 rounded transition">
-                    Zoom zuruecksetzen
-                </button>
-            </div>
-            <p class="text-gray-500 text-xs mb-2">Tipp: Im Graph klicken & ziehen um zu zoomen</p>
-            <div style="height: 350px;">
-                <canvas id="weightChart"></canvas>
+        {% if can_view_oura %}
+        <!-- ============================================ -->
+        <!-- TAB: Sleep -->
+        <!-- ============================================ -->
+        <div id="tab-sleep" class="tab-content hidden">
+            <div id="sleepContent">
+                <p class="text-gray-400">Laden...</p>
             </div>
         </div>
 
-        <!-- History Table -->
-        <div class="bg-dark-card rounded-xl border border-dark-border overflow-hidden">
-            <div class="p-4 border-b border-dark-border">
-                <h2 class="text-lg font-semibold">Letzte Eintraege</h2>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full">
-                    <thead class="bg-slate-800">
-                        <tr>
-                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Datum</th>
-                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Gewicht</th>
-                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">BMI</th>
-                            <th class="px-4 py-3 text-left text-sm font-medium text-gray-400">Fett %</th>
-                        </tr>
-                    </thead>
-                    <tbody id="historyTable" class="divide-y divide-dark-border">
-                        <!-- Filled by JS -->
-                    </tbody>
-                </table>
+        <!-- ============================================ -->
+        <!-- TAB: Readiness -->
+        <!-- ============================================ -->
+        <div id="tab-readiness" class="tab-content hidden">
+            <div id="readinessContent">
+                <p class="text-gray-400">Laden...</p>
             </div>
         </div>
+
+        <!-- ============================================ -->
+        <!-- TAB: Heart Rate -->
+        <!-- ============================================ -->
+        <div id="tab-heartrate" class="tab-content hidden">
+            <div class="flex flex-wrap gap-2 mb-4 items-center">
+                <button onclick="loadHeartRate(1)" class="hr-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-hours="1">1h</button>
+                <button onclick="loadHeartRate(6)" class="hr-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-hours="6">6h</button>
+                <button onclick="loadHeartRate(12)" class="hr-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-hours="12">12h</button>
+                <button onclick="loadHeartRate(24)" class="hr-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-hours="24">1d</button>
+                <button onclick="loadHeartRate(168)" class="hr-btn px-4 py-2 rounded-lg bg-dark-card border border-dark-border hover:bg-slate-700 transition" data-hours="168">7d</button>
+                <button onclick="loadHeartRate(currentHrHours)" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg transition">Aktualisieren</button>
+            </div>
+            <div class="bg-dark-card rounded-xl p-4 border border-dark-border">
+                <div style="height: 350px;">
+                    <canvas id="hrChart"></canvas>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <script>
         // Persist token in localStorage (resilient against browser cookie cleanup)
         const TOKEN = '{{ token }}';
+        const CAN_VIEW_OURA = {{ 'true' if can_view_oura else 'false' }};
         localStorage.setItem('token', TOKEN);
 
         let chart = null;
+        let hrChart = null;
         let goalWeight = null;
+        let currentHrHours = 24;
+        let ouraTabsLoaded = { sleep: false, readiness: false, heartrate: false };
 
         const PERIOD_DAYS = { '1M': 30, '3M': 90, '6M': 180, '1J': 365, 'Alle': 9999 };
         const DEFAULT_PERIOD = '{{ default_period }}';
+        const TZ = '{{ "Europe/Zurich" }}';
 
-        // Fetch helper - sends token as query param
+        // Fetch helper
         async function fetchAPI(endpoint) {
             const sep = endpoint.includes('?') ? '&' : '?';
             const response = await fetch(endpoint + sep + 'token=' + TOKEN);
@@ -140,7 +194,66 @@
             return response.json();
         }
 
-        // Load goal
+        // Format helpers
+        function formatDuration(seconds) {
+            if (!seconds) return '--';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            return `${h}h ${m}m`;
+        }
+
+        function scoreColor(score) {
+            if (score >= 85) return 'text-emerald-400';
+            if (score >= 70) return 'text-amber-400';
+            return 'text-red-400';
+        }
+
+        function scoreBg(score) {
+            if (score >= 85) return 'bg-emerald-500';
+            if (score >= 70) return 'bg-amber-500';
+            return 'bg-red-500';
+        }
+
+        function formatLocalDate(utcString) {
+            const d = new Date(utcString);
+            return d.toLocaleDateString('de-CH', { weekday: 'short', day: 'numeric', month: 'short', timeZone: TZ });
+        }
+
+        function formatLocalTime(utcString) {
+            const d = new Date(utcString);
+            return d.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+        }
+
+        // ============================================
+        // Tab Navigation
+        // ============================================
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white');
+                btn.classList.add('text-gray-400', 'hover:text-white');
+            });
+
+            document.getElementById('tab-' + tab).classList.remove('hidden');
+            const activeBtn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+            if (activeBtn) {
+                activeBtn.classList.add('bg-blue-600', 'text-white');
+                activeBtn.classList.remove('text-gray-400', 'hover:text-white');
+            }
+
+            // Lazy load Oura tabs
+            if (CAN_VIEW_OURA && !ouraTabsLoaded[tab]) {
+                if (tab === 'sleep') loadSleep();
+                if (tab === 'readiness') loadReadiness();
+                if (tab === 'heartrate') loadHeartRate(24);
+            }
+        }
+
+        // ============================================
+        // Weight Tab
+        // ============================================
+
         async function loadGoal() {
             try {
                 const data = await fetchAPI('/api/goal');
@@ -153,16 +266,13 @@
             }
         }
 
-        // Load data for named period
         function loadPeriod(period) {
             const days = PERIOD_DAYS[period] || 90;
             loadData(days, period);
         }
 
-        // Load data for period
         async function loadData(days = 90, period = null) {
             try {
-                // Update active button
                 document.querySelectorAll('.period-btn').forEach(btn => {
                     btn.classList.remove('bg-blue-600', 'border-blue-500');
                     if (period && btn.dataset.period === period) {
@@ -170,13 +280,11 @@
                     }
                 });
 
-                // Fetch weight and stats
                 const [weightData, stats] = await Promise.all([
                     fetchAPI(`/api/weight?days=${days}`),
                     fetchAPI(`/api/stats?days=${days}`)
                 ]);
 
-                // Update stats
                 if (stats.current) {
                     document.getElementById('currentWeight').textContent = stats.current.toFixed(1) + ' kg';
                 }
@@ -191,35 +299,23 @@
                     document.getElementById('remaining').textContent = remaining.toFixed(1) + ' kg';
                 }
 
-                // Update chart
                 updateChart(weightData.weight);
-
-                // Update table
                 updateTable(weightData.weight);
 
-                // Update last update time
                 if (weightData.weight.length > 0) {
                     const lastEntry = weightData.weight[weightData.weight.length - 1];
                     const lastDate = new Date(lastEntry.time);
                     document.getElementById('lastUpdate').textContent =
-                        'Letztes Update: ' + lastDate.toLocaleDateString('de-DE') + ' ' + lastDate.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
+                        'Letztes Update: ' + lastDate.toLocaleDateString('de-CH', { timeZone: TZ }) + ' ' + lastDate.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
                 }
-
             } catch (e) {
                 console.error('Error loading data:', e);
             }
         }
 
-        // Update chart
         function updateChart(data) {
             const ctx = document.getElementById('weightChart').getContext('2d');
-
-            const chartData = data.map(d => ({
-                x: new Date(d.time),
-                y: d.weight,
-                bmi: d.bmi,
-                fat: d.fat
-            }));
+            const chartData = data.map(d => ({ x: new Date(d.time), y: d.weight, bmi: d.bmi, fat: d.fat }));
 
             if (chart) {
                 chart.data.datasets[0].data = chartData;
@@ -235,163 +331,74 @@
                         data: chartData,
                         borderColor: '#3b82f6',
                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 4,
-                        pointHoverRadius: 8,
-                        pointBackgroundColor: '#3b82f6',
-                        pointBorderColor: '#1e293b',
-                        pointBorderWidth: 2
+                        fill: true, tension: 0.3, pointRadius: 4, pointHoverRadius: 8,
+                        pointBackgroundColor: '#3b82f6', pointBorderColor: '#1e293b', pointBorderWidth: 2
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
-                    },
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { intersect: false, mode: 'index' },
                     plugins: {
-                        legend: {
-                            display: false
-                        },
+                        legend: { display: false },
                         tooltip: {
-                            backgroundColor: '#1e293b',
-                            titleColor: '#fff',
-                            bodyColor: '#94a3b8',
-                            borderColor: '#334155',
-                            borderWidth: 1,
-                            padding: 12,
-                            displayColors: false,
+                            backgroundColor: '#1e293b', titleColor: '#fff', bodyColor: '#94a3b8',
+                            borderColor: '#334155', borderWidth: 1, padding: 12, displayColors: false,
                             callbacks: {
-                                title: function(context) {
-                                    const date = new Date(context[0].parsed.x);
-                                    return date.toLocaleDateString('de-DE', {
-                                        weekday: 'long',
-                                        year: 'numeric',
-                                        month: 'long',
-                                        day: 'numeric'
-                                    });
-                                },
-                                label: function(context) {
-                                    const point = context.raw;
-                                    const lines = [`Gewicht: ${point.y.toFixed(1)} kg`];
-                                    if (point.bmi) lines.push(`BMI: ${point.bmi.toFixed(1)}`);
-                                    if (point.fat) lines.push(`Fett: ${point.fat.toFixed(1)}%`);
+                                title: ctx => new Date(ctx[0].parsed.x).toLocaleDateString('de-CH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: TZ }),
+                                label: ctx => {
+                                    const p = ctx.raw;
+                                    const lines = [`Gewicht: ${p.y.toFixed(1)} kg`];
+                                    if (p.bmi) lines.push(`BMI: ${p.bmi.toFixed(1)}`);
+                                    if (p.fat) lines.push(`Fett: ${p.fat.toFixed(1)}%`);
                                     return lines;
                                 }
                             }
                         },
                         zoom: {
                             zoom: {
-                                drag: {
-                                    enabled: true,
-                                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                                    borderColor: 'rgba(59, 130, 246, 0.8)',
-                                    borderWidth: 1,
-                                    threshold: 10,
-                                },
+                                drag: { enabled: true, backgroundColor: 'rgba(59,130,246,0.2)', borderColor: 'rgba(59,130,246,0.8)', borderWidth: 1, threshold: 10 },
                                 mode: 'x',
-                                onZoomComplete: function({chart}) {
-                                    document.getElementById('resetZoomBtn').classList.remove('hidden');
-                                }
+                                onZoomComplete: () => document.getElementById('resetZoomBtn').classList.remove('hidden')
                             },
-                            pan: {
-                                enabled: true,
-                                mode: 'x',
-                                threshold: 10,
-                            },
-                            limits: {
-                                x: {min: 'original', max: 'original'},
-                            }
+                            pan: { enabled: true, mode: 'x', threshold: 10 },
+                            limits: { x: { min: 'original', max: 'original' } }
                         }
                     },
                     scales: {
-                        x: {
-                            type: 'time',
-                            time: {
-                                unit: 'day',
-                                displayFormats: {
-                                    day: 'dd.MM'
-                                }
-                            },
-                            grid: {
-                                color: '#334155'
-                            },
-                            ticks: {
-                                color: '#94a3b8'
-                            }
-                        },
-                        y: {
-                            grid: {
-                                color: '#334155'
-                            },
-                            ticks: {
-                                color: '#94a3b8',
-                                callback: function(value) {
-                                    return value.toFixed(1) + ' kg';
-                                }
-                            }
-                        }
+                        x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'dd.MM' } }, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                        y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8', callback: v => v.toFixed(1) + ' kg' } }
                     }
                 }
             });
 
-            // Add goal line if available
             if (goalWeight) {
                 chart.options.plugins.annotation = {
-                    annotations: {
-                        goalLine: {
-                            type: 'line',
-                            yMin: goalWeight,
-                            yMax: goalWeight,
-                            borderColor: '#10b981',
-                            borderWidth: 2,
-                            borderDash: [5, 5],
-                            label: {
-                                display: true,
-                                content: 'Ziel: ' + goalWeight + ' kg',
-                                position: 'end'
-                            }
-                        }
-                    }
+                    annotations: { goalLine: { type: 'line', yMin: goalWeight, yMax: goalWeight, borderColor: '#10b981', borderWidth: 2, borderDash: [5, 5], label: { display: true, content: 'Ziel: ' + goalWeight + ' kg', position: 'end' } } }
                 };
                 chart.update();
             }
         }
 
-        // Update table
         function updateTable(data) {
             const tbody = document.getElementById('historyTable');
-            // Show last 10 entries, newest first
             const recent = data.slice(-10).reverse();
-
             tbody.innerHTML = recent.map(entry => {
                 const date = new Date(entry.time);
-                return `
-                    <tr class="hover:bg-slate-800 transition">
-                        <td class="px-4 py-3 text-sm">
-                            ${date.toLocaleDateString('de-DE')} ${date.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'})}
-                        </td>
-                        <td class="px-4 py-3 text-sm font-medium">${entry.weight.toFixed(1)} kg</td>
-                        <td class="px-4 py-3 text-sm text-gray-400">${entry.bmi ? entry.bmi.toFixed(1) : '-'}</td>
-                        <td class="px-4 py-3 text-sm text-gray-400">${entry.fat ? entry.fat.toFixed(1) + '%' : '-'}</td>
-                    </tr>
-                `;
+                return `<tr class="hover:bg-slate-800 transition">
+                    <td class="px-4 py-3 text-sm">${date.toLocaleDateString('de-CH', { timeZone: TZ })} ${date.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ })}</td>
+                    <td class="px-4 py-3 text-sm font-medium">${entry.weight.toFixed(1)} kg</td>
+                    <td class="px-4 py-3 text-sm text-gray-400">${entry.bmi ? entry.bmi.toFixed(1) : '-'}</td>
+                    <td class="px-4 py-3 text-sm text-gray-400">${entry.fat ? entry.fat.toFixed(1) + '%' : '-'}</td>
+                </tr>`;
             }).join('');
         }
 
-        // Toggle custom date range
         function toggleCustom() {
             const customRange = document.getElementById('customRange');
             const customBtn = document.getElementById('customBtn');
-            const isHidden = customRange.classList.contains('hidden');
-
-            if (isHidden) {
+            if (customRange.classList.contains('hidden')) {
                 customRange.classList.remove('hidden');
                 customBtn.classList.add('bg-blue-600', 'border-blue-500');
-
-                // Set default dates
                 const today = new Date().toISOString().split('T')[0];
                 const yearAgo = new Date(Date.now() - 365*24*60*60*1000).toISOString().split('T')[0];
                 document.getElementById('dateTo').value = today;
@@ -402,20 +409,12 @@
             }
         }
 
-        // Load custom date range
         async function loadCustomRange() {
             const from = document.getElementById('dateFrom').value;
             const to = document.getElementById('dateTo').value;
+            if (!from || !to) { alert('Bitte Von und Bis Datum eingeben'); return; }
 
-            if (!from || !to) {
-                alert('Bitte Von und Bis Datum eingeben');
-                return;
-            }
-
-            // Clear other button highlights
-            document.querySelectorAll('.period-btn').forEach(btn => {
-                btn.classList.remove('bg-blue-600', 'border-blue-500');
-            });
+            document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('bg-blue-600', 'border-blue-500'));
             document.getElementById('customBtn').classList.add('bg-blue-600', 'border-blue-500');
 
             try {
@@ -423,45 +422,271 @@
                     fetchAPI(`/api/weight?from=${from}&to=${to}`),
                     fetchAPI(`/api/stats?from=${from}&to=${to}`)
                 ]);
-
-                // Update stats
-                if (stats.current) {
-                    document.getElementById('currentWeight').textContent = stats.current.toFixed(1) + ' kg';
-                }
+                if (stats.current) document.getElementById('currentWeight').textContent = stats.current.toFixed(1) + ' kg';
                 if (stats.trend_per_week !== null) {
                     const trendEl = document.getElementById('trend');
-                    const trend = stats.trend_per_week;
-                    trendEl.textContent = (trend > 0 ? '+' : '') + trend.toFixed(2) + ' kg';
-                    trendEl.className = 'text-2xl font-bold ' + (trend < 0 ? 'text-emerald-400' : 'text-red-400');
+                    trendEl.textContent = (stats.trend_per_week > 0 ? '+' : '') + stats.trend_per_week.toFixed(2) + ' kg';
+                    trendEl.className = 'text-2xl font-bold ' + (stats.trend_per_week < 0 ? 'text-emerald-400' : 'text-red-400');
                 }
-                if (stats.current && goalWeight) {
-                    const remaining = stats.current - goalWeight;
-                    document.getElementById('remaining').textContent = remaining.toFixed(1) + ' kg';
-                }
-
+                if (stats.current && goalWeight) document.getElementById('remaining').textContent = (stats.current - goalWeight).toFixed(1) + ' kg';
                 updateChart(weightData.weight);
                 updateTable(weightData.weight);
-
-                if (weightData.weight.length > 0) {
-                    const lastEntry = weightData.weight[weightData.weight.length - 1];
-                    const lastDate = new Date(lastEntry.time);
-                    document.getElementById('lastUpdate').textContent =
-                        'Letztes Update: ' + lastDate.toLocaleDateString('de-DE') + ' ' + lastDate.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
-                }
-            } catch (e) {
-                console.error('Error loading custom range:', e);
-            }
+            } catch (e) { console.error('Error:', e); }
         }
 
-        // Reset chart zoom
         function resetZoom() {
-            if (chart) {
-                chart.resetZoom();
-                document.getElementById('resetZoomBtn').classList.add('hidden');
+            if (chart) { chart.resetZoom(); document.getElementById('resetZoomBtn').classList.add('hidden'); }
+        }
+
+        // ============================================
+        // Sleep Tab
+        // ============================================
+
+        async function loadSleep() {
+            try {
+                const data = await fetchAPI('/api/oura/sleep?days=4');
+                ouraTabsLoaded.sleep = true;
+                const container = document.getElementById('sleepContent');
+
+                const daily = data.daily || [];
+                const sessions = data.sessions || [];
+
+                if (daily.length === 0) {
+                    container.innerHTML = '<p class="text-gray-400">Keine Schlaf-Daten vorhanden.</p>';
+                    return;
+                }
+
+                let html = '<div class="grid gap-4">';
+                // Show days in reverse (newest first)
+                for (const day of daily.reverse()) {
+                    const dayDate = formatLocalDate(day.time);
+                    const score = day.score || 0;
+                    // Find matching sleep session (long_sleep)
+                    const session = sessions.find(s => s.type === 'long_sleep' && s.time && s.time.startsWith(day.time.split('T')[0]));
+
+                    html += `<div class="bg-dark-card rounded-xl p-5 border border-dark-border">
+                        <div class="flex justify-between items-start mb-3">
+                            <h3 class="text-white font-medium">${dayDate}</h3>
+                            <span class="text-3xl font-bold ${scoreColor(score)}">${score}</span>
+                        </div>`;
+
+                    if (session) {
+                        const total = session.total_sleep_duration || 0;
+                        const deep = session.deep_sleep_duration || 0;
+                        const rem = session.rem_sleep_duration || 0;
+                        const light = session.light_sleep_duration || 0;
+                        const sumPhases = deep + rem + light || 1;
+
+                        html += `<div class="mb-3">
+                            <p class="text-gray-400 text-sm mb-1">Schlafdauer: <span class="text-white">${formatDuration(total)}</span></p>
+                            <div class="sleep-bar">
+                                <div class="bg-indigo-600" style="width:${(deep/sumPhases*100).toFixed(1)}%" title="Tiefschlaf: ${formatDuration(deep)}"></div>
+                                <div class="bg-purple-500" style="width:${(rem/sumPhases*100).toFixed(1)}%" title="REM: ${formatDuration(rem)}"></div>
+                                <div class="bg-sky-400" style="width:${(light/sumPhases*100).toFixed(1)}%" title="Leicht: ${formatDuration(light)}"></div>
+                            </div>
+                            <div class="flex gap-4 mt-1 text-xs text-gray-500">
+                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-indigo-600 inline-block"></span>Tief ${formatDuration(deep)}</span>
+                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-purple-500 inline-block"></span>REM ${formatDuration(rem)}</span>
+                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-sky-400 inline-block"></span>Leicht ${formatDuration(light)}</span>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-4 text-sm">
+                            <div><span class="text-gray-400">Effizienz</span><br><span class="text-white">${session.efficiency || '--'}%</span></div>
+                            <div><span class="text-gray-400">Tiefste HR</span><br><span class="text-white">${session.lowest_heart_rate || '--'} bpm</span></div>
+                            <div><span class="text-gray-400">HRV</span><br><span class="text-white">${session.average_hrv ? session.average_hrv.toFixed(0) + ' ms' : '--'}</span></div>
+                        </div>`;
+                    }
+
+                    html += '</div>';
+                }
+                html += '</div>';
+
+                // Contributors
+                if (daily.length > 0 && daily[0].contrib_deep_sleep !== undefined) {
+                    const latest = daily[0];
+                    html += `<div class="bg-dark-card rounded-xl p-5 border border-dark-border mt-4">
+                        <h3 class="text-white font-medium mb-3">Sleep Score Faktoren (heute)</h3>
+                        <div class="space-y-2">`;
+                    const contribs = [
+                        ['Tiefschlaf', latest.contrib_deep_sleep],
+                        ['Effizienz', latest.contrib_efficiency],
+                        ['Einschlafzeit', latest.contrib_latency],
+                        ['REM', latest.contrib_rem_sleep],
+                        ['Ruhe', latest.contrib_restfulness],
+                        ['Timing', latest.contrib_timing],
+                        ['Gesamtschlaf', latest.contrib_total_sleep],
+                    ];
+                    for (const [name, val] of contribs) {
+                        if (val !== undefined && val !== null) {
+                            html += `<div class="flex items-center gap-3">
+                                <span class="text-gray-400 text-sm w-28">${name}</span>
+                                <div class="flex-1 bg-slate-700 rounded-full h-2"><div class="${scoreBg(val)} h-2 rounded-full" style="width:${val}%"></div></div>
+                                <span class="text-sm text-white w-8 text-right">${val}</span>
+                            </div>`;
+                        }
+                    }
+                    html += '</div></div>';
+                }
+
+                container.innerHTML = html;
+            } catch (e) {
+                console.error('Error loading sleep:', e);
+                document.getElementById('sleepContent').innerHTML = '<p class="text-red-400">Fehler beim Laden der Schlaf-Daten.</p>';
             }
         }
 
-        // Initial load - goal must resolve before period data
+        // ============================================
+        // Readiness Tab
+        // ============================================
+
+        async function loadReadiness() {
+            try {
+                const data = await fetchAPI('/api/oura/readiness?days=4');
+                ouraTabsLoaded.readiness = true;
+                const container = document.getElementById('readinessContent');
+
+                if (!data || data.length === 0) {
+                    container.innerHTML = '<p class="text-gray-400">Keine Readiness-Daten vorhanden.</p>';
+                    return;
+                }
+
+                let html = '<div class="grid gap-4">';
+                for (const entry of [...data].reverse()) {
+                    const dayDate = formatLocalDate(entry.time);
+                    const score = entry.score || 0;
+
+                    html += `<div class="bg-dark-card rounded-xl p-5 border border-dark-border">
+                        <div class="flex justify-between items-start mb-4">
+                            <h3 class="text-white font-medium">${dayDate}</h3>
+                            <span class="text-3xl font-bold ${scoreColor(score)}">${score}</span>
+                        </div>
+                        <div class="space-y-2">`;
+
+                    const contribs = [
+                        ['Aktivitaet', entry.contrib_activity_balance],
+                        ['Temperatur', entry.contrib_body_temperature],
+                        ['HRV Balance', entry.contrib_hrv_balance],
+                        ['Vorherige Aktivitaet', entry.contrib_previous_day_activity],
+                        ['Letzte Nacht', entry.contrib_previous_night],
+                        ['Erholung', entry.contrib_recovery_index],
+                        ['Ruhe-HR', entry.contrib_resting_heart_rate],
+                        ['Schlaf Balance', entry.contrib_sleep_balance],
+                    ];
+                    for (const [name, val] of contribs) {
+                        if (val !== undefined && val !== null) {
+                            html += `<div class="flex items-center gap-3">
+                                <span class="text-gray-400 text-sm w-36">${name}</span>
+                                <div class="flex-1 bg-slate-700 rounded-full h-2"><div class="${scoreBg(val)} h-2 rounded-full" style="width:${val}%"></div></div>
+                                <span class="text-sm text-white w-8 text-right">${val}</span>
+                            </div>`;
+                        }
+                    }
+
+                    if (entry.temperature_deviation !== undefined && entry.temperature_deviation !== null) {
+                        html += `<div class="mt-3 pt-3 border-t border-dark-border text-sm text-gray-400">
+                            Temperatur-Abweichung: <span class="text-white">${entry.temperature_deviation > 0 ? '+' : ''}${entry.temperature_deviation.toFixed(2)}°C</span>
+                        </div>`;
+                    }
+
+                    html += '</div></div>';
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            } catch (e) {
+                console.error('Error loading readiness:', e);
+                document.getElementById('readinessContent').innerHTML = '<p class="text-red-400">Fehler beim Laden der Readiness-Daten.</p>';
+            }
+        }
+
+        // ============================================
+        // Heart Rate Tab
+        // ============================================
+
+        async function loadHeartRate(hours = 24) {
+            currentHrHours = hours;
+            try {
+                // Update active button
+                document.querySelectorAll('.hr-btn').forEach(btn => {
+                    btn.classList.remove('bg-blue-600', 'border-blue-500');
+                    if (parseInt(btn.dataset.hours) === hours) {
+                        btn.classList.add('bg-blue-600', 'border-blue-500');
+                    }
+                });
+
+                const data = await fetchAPI(`/api/oura/heartrate?hours=${hours}`);
+                ouraTabsLoaded.heartrate = true;
+
+                if (!data || data.length === 0) {
+                    if (hrChart) { hrChart.destroy(); hrChart = null; }
+                    return;
+                }
+
+                const hrData = data.map(d => ({ x: new Date(d.time), y: d.bpm }));
+
+                const ctx = document.getElementById('hrChart').getContext('2d');
+                if (hrChart) {
+                    hrChart.data.datasets[0].data = hrData;
+                    hrChart.update();
+                    return;
+                }
+
+                hrChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [{
+                            label: 'Heart Rate',
+                            data: hrData,
+                            borderColor: '#ef4444',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        interaction: { intersect: false, mode: 'index' },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: '#1e293b', titleColor: '#fff', bodyColor: '#94a3b8',
+                                borderColor: '#334155', borderWidth: 1, padding: 12, displayColors: false,
+                                callbacks: {
+                                    title: ctx => {
+                                        const d = new Date(ctx[0].parsed.x);
+                                        return d.toLocaleDateString('de-CH', { weekday: 'short', day: 'numeric', month: 'short', timeZone: TZ }) + ' ' +
+                                               d.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+                                    },
+                                    label: ctx => `${ctx.raw.y} bpm`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: { displayFormats: { hour: 'HH:mm', day: 'dd.MM HH:mm' } },
+                                grid: { color: '#334155' }, ticks: { color: '#94a3b8' }
+                            },
+                            y: {
+                                grid: { color: '#334155' },
+                                ticks: { color: '#94a3b8', callback: v => v + ' bpm' }
+                            }
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error('Error loading heart rate:', e);
+            }
+        }
+
+        // ============================================
+        // Init
+        // ============================================
+
+        // Set initial active tab
+        if (CAN_VIEW_OURA) {
+            switchTab('weight');
+        }
+
+        // Load weight data
         loadGoal().then(() => loadPeriod(DEFAULT_PERIOD));
     </script>
 </body>

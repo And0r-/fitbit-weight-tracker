@@ -1,5 +1,5 @@
 """PostgreSQL database connection and session management."""
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from .config import settings
@@ -18,8 +18,13 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def init_db():
-    """Create all tables."""
+    """Create all tables and run migrations."""
     Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        conn.execute(text(
+            "ALTER TABLE share_tokens ADD COLUMN IF NOT EXISTS can_view_oura BOOLEAN DEFAULT FALSE"
+        ))
+        conn.commit()
 
 
 def get_db():

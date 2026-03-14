@@ -49,6 +49,37 @@
             {% endif %}
         </div>
 
+        <!-- Oura Status -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-8">
+            <h2 class="text-lg font-semibold mb-4">Oura Ring Verbindung</h2>
+            {% if oura_connected %}
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 bg-emerald-500 rounded-full"></span>
+                    <span class="text-emerald-400">Verbunden</span>
+                </div>
+                <form method="POST" action="/admin/oura/sync">
+                    <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition">
+                        Oura Daten synchronisieren
+                    </button>
+                </form>
+            </div>
+            <p class="text-gray-500 text-sm mt-4">
+                Automatische Synchronisation alle {{ sync_interval }} Minuten (letzte 3 Tage).
+            </p>
+            {% else %}
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 bg-red-500 rounded-full"></span>
+                    <span class="text-red-400">Nicht verbunden</span>
+                </div>
+                <a href="/oura/login" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition">
+                    Mit Oura verbinden
+                </a>
+            </div>
+            {% endif %}
+        </div>
+
         <!-- Create Token -->
         <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-8">
             <h2 class="text-lg font-semibold mb-4">Neuen Token erstellen</h2>
@@ -62,7 +93,11 @@
                 >
                 <label class="flex items-center gap-2 text-gray-400">
                     <input type="checkbox" name="is_admin" value="true" class="rounded">
-                    <span>Admin-Rechte</span>
+                    <span>Admin</span>
+                </label>
+                <label class="flex items-center gap-2 text-gray-400">
+                    <input type="checkbox" name="can_view_oura" value="true" class="rounded">
+                    <span>Oura-Zugang</span>
                 </label>
                 <button
                     type="submit"
@@ -104,11 +139,16 @@
                                 </button>
                             </td>
                             <td class="px-4 py-3 text-sm">
-                                {% if token.is_admin %}
-                                <span class="bg-amber-900/50 text-amber-400 px-2 py-1 rounded text-xs">Admin</span>
-                                {% else %}
-                                <span class="bg-blue-900/50 text-blue-400 px-2 py-1 rounded text-xs">Share</span>
-                                {% endif %}
+                                <div class="flex gap-1 flex-wrap">
+                                    {% if token.is_admin %}
+                                    <span class="bg-amber-900/50 text-amber-400 px-2 py-1 rounded text-xs">Admin</span>
+                                    {% else %}
+                                    <span class="bg-blue-900/50 text-blue-400 px-2 py-1 rounded text-xs">Share</span>
+                                    {% endif %}
+                                    {% if token.can_view_oura %}
+                                    <span class="bg-purple-900/50 text-purple-400 px-2 py-1 rounded text-xs">Oura</span>
+                                    {% endif %}
+                                </div>
                             </td>
                             <td class="px-4 py-3 text-sm text-gray-400">
                                 {% if token.last_used_at %}

@@ -16,6 +16,7 @@ from .database import get_db, init_db, SessionLocal
 from .fitbit import fitbit_client
 from .influxdb_client import weight_db
 from .models import AccessLog, ShareToken
+from .oura import oura_client
 from .scheduler import sync_scheduler
 
 # Configure logging
@@ -149,6 +150,7 @@ async def index(
             "request": request,
             "token": share_token.token,
             "is_admin": share_token.is_admin,
+            "can_view_oura": share_token.can_view_oura,
             "default_period": settings.default_period,
         },
     )
@@ -331,6 +333,7 @@ async def admin_page(
             "tokens": tokens,
             "current_token_id": share_token.id,
             "fitbit_connected": fitbit_client.is_authenticated(),
+            "oura_connected": oura_client.is_authenticated(),
             "sync_interval": settings.sync_interval_minutes,
         },
     )
@@ -341,6 +344,7 @@ async def create_token(
     request: Request,
     name: str = Form(...),
     is_admin: bool = Form(False),
+    can_view_oura: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     """Create a new token."""
@@ -352,6 +356,7 @@ async def create_token(
         token=str(uuid.uuid4()),
         name=name,
         is_admin=is_admin,
+        can_view_oura=can_view_oura,
     )
     db.add(new_token)
     db.commit()
@@ -483,3 +488,133 @@ async def trigger_sync(
     # Sync all data (20 years should cover everything)
     await sync_scheduler.run_full_sync(days=20*365)
     return RedirectResponse("/admin", status_code=303)
+
+
+# ============================================
+# Oura OAuth
+# ============================================
+
+
+@app.get("/oura/login")
+async def oura_login(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Start Oura OAuth flow (admin only)."""
+    share_token = get_token_from_request(request, None, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    auth_url = oura_client.get_auth_url()
+    return RedirectResponse(auth_url)
+
+
+@app.get("/oura/callback")
+async def oura_callback(code: str | None = None, error: str | None = None):
+    """Handle Oura OAuth callback."""
+    if error:
+        return HTMLResponse(f"<h1>Error: {error}</h1>", status_code=400)
+
+    if not code:
+        return HTMLResponse("<h1>No code received</h1>", status_code=400)
+
+    try:
+        await oura_client.exchange_code(code)
+        logger.info("Oura authentication successful")
+        await sync_scheduler.run_oura_now()
+
+        return HTMLResponse("""
+            <!DOCTYPE html>
+            <html><head><title>Erfolg!</title>
+            <style>body{font-family:sans-serif;background:#0f172a;color:#eee;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}</style>
+            </head><body><div style="text-align:center">
+                <h1>Oura Ring verbunden!</h1>
+                <p>Die Daten werden synchronisiert.</p>
+                <p><a href="/admin" style="color:#3b82f6">Zurueck zum Admin</a></p>
+            </div></body></html>
+        """)
+    except Exception as e:
+        logger.error(f"Oura OAuth callback failed: {e}")
+        return HTMLResponse(f"<h1>Authentication failed</h1><pre>{e}</pre>", status_code=500)
+
+
+@app.post("/admin/oura/sync")
+async def trigger_oura_sync(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Manually trigger full Oura sync."""
+    share_token = get_token_from_request(request, None, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    if not oura_client.is_authenticated():
+        raise HTTPException(status_code=503, detail="Oura not connected")
+
+    await sync_scheduler.run_oura_full(days=30)
+    return RedirectResponse("/admin", status_code=303)
+
+
+# ============================================
+# Oura API Endpoints
+# ============================================
+
+
+def _require_oura(share_token: ShareToken | None):
+    """Check token has Oura access."""
+    if not share_token:
+        raise HTTPException(status_code=401, detail="Token required")
+    if not share_token.can_view_oura:
+        raise HTTPException(status_code=403, detail="Oura access not granted")
+
+
+@app.get("/api/oura/sleep")
+async def get_oura_sleep(
+    request: Request,
+    days: int = Query(default=3, ge=1, le=30),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get Oura sleep data."""
+    share_token = get_token_from_request(request, token, db)
+    _require_oura(share_token)
+    return weight_db.get_sleep_history(days)
+
+
+@app.get("/api/oura/readiness")
+async def get_oura_readiness(
+    request: Request,
+    days: int = Query(default=3, ge=1, le=30),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get Oura readiness data."""
+    share_token = get_token_from_request(request, token, db)
+    _require_oura(share_token)
+    return weight_db.get_readiness_history(days)
+
+
+@app.get("/api/oura/heartrate")
+async def get_oura_heartrate(
+    request: Request,
+    hours: int = Query(default=24, ge=1, le=168),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get Oura heart rate data."""
+    share_token = get_token_from_request(request, token, db)
+    _require_oura(share_token)
+    return weight_db.get_heart_rate_history(hours)
+
+
+@app.get("/api/oura/stress")
+async def get_oura_stress(
+    request: Request,
+    days: int = Query(default=1, ge=1, le=30),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get Oura stress data."""
+    share_token = get_token_from_request(request, token, db)
+    _require_oura(share_token)
+    return weight_db.get_stress_history(days)

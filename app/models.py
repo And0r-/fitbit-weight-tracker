@@ -17,6 +17,7 @@ class ShareToken(Base):
     token = Column(String(64), unique=True, nullable=False, index=True)
     name = Column(String(100), nullable=False)  # e.g. "Max", "Anna"
     is_admin = Column(Boolean, default=False)  # Admin tokens can manage other tokens
+    can_view_oura = Column(Boolean, default=False)  # Access to Oura Ring data
     created_at = Column(DateTime, default=datetime.utcnow)
     last_used_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True)
