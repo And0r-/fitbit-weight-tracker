@@ -331,7 +331,7 @@ async def admin_page(
             "tokens": tokens,
             "current_token_id": share_token.id,
             "fitbit_connected": fitbit_client.is_authenticated(),
-            "sync_interval": settings.sync_interval_hours,
+            "sync_interval": settings.sync_interval_minutes,
         },
     )
 

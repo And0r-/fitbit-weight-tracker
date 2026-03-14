@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     admin_token: str
 
     # Sync
-    sync_interval_hours: int = 4
+    sync_interval_minutes: int = 30
 
     # UI: default period preset (1M, 3M, 6M, 1J, Alle)
     default_period: str = "3M"

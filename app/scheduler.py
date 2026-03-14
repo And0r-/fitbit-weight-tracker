@@ -23,6 +23,7 @@ async def sync_weight_data(days: int = 7):
     try:
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
+        logger.info(f"Fetching {start_date.date()} to {end_date.date()}...")
 
         entries = await fitbit_client.get_weight_range(start_date, end_date)
         logger.info(f"Fetched {len(entries)} weight entries from Fitbit")
@@ -30,11 +31,13 @@ async def sync_weight_data(days: int = 7):
         if entries:
             weight_db.write_weights_batch(entries)
             logger.info(f"Written {len(entries)} entries to InfluxDB")
+        else:
+            logger.info("No new entries in this period")
 
         return len(entries)
 
     except Exception as e:
-        logger.error(f"Sync failed: {e}")
+        logger.error(f"Sync failed: {e}", exc_info=True)
         return 0
 
 
@@ -92,7 +95,7 @@ class SyncScheduler:
 
         self.scheduler.add_job(
             sync_weight_data,
-            trigger=IntervalTrigger(hours=settings.sync_interval_hours),
+            trigger=IntervalTrigger(minutes=settings.sync_interval_minutes),
             id="fitbit_sync",
             name="Fitbit Weight Sync",
             replace_existing=True,
@@ -101,7 +104,7 @@ class SyncScheduler:
         self.scheduler.start()
         self._started = True
         logger.info(
-            f"Scheduler started - syncing every {settings.sync_interval_hours} hours"
+            f"Scheduler started - syncing every {settings.sync_interval_minutes} minutes"
         )
 
     def stop(self):

@@ -14,16 +14,26 @@ class WeightDatabase:
 
     @property
     def client(self) -> InfluxDBClient:
-        """Lazy connection to InfluxDB."""
+        """Lazy connection to InfluxDB with reconnect on failure."""
         if self._client is None:
-            self._client = InfluxDBClient(
+            client = InfluxDBClient(
                 host=settings.influxdb_host,
                 port=settings.influxdb_port,
                 database=settings.influxdb_db,
             )
-            # Ensure database exists
-            self._client.create_database(settings.influxdb_db)
+            # Ensure database exists - only set _client after success
+            client.create_database(settings.influxdb_db)
+            self._client = client
         return self._client
+
+    def _reset_client(self):
+        """Reset client so next access creates a fresh connection."""
+        try:
+            if self._client:
+                self._client.close()
+        except Exception:
+            pass
+        self._client = None
 
     def write_weight(
         self,
@@ -74,7 +84,19 @@ class WeightDatabase:
             )
 
         if points:
-            self.client.write_points(points)
+            try:
+                self.client.write_points(points)
+            except Exception:
+                self._reset_client()
+                raise
+
+    def _query(self, query: str):
+        """Execute InfluxDB query with reconnect on failure."""
+        try:
+            return self.client.query(query)
+        except Exception:
+            self._reset_client()
+            raise
 
     def get_weight_history(self, days: int = 30) -> list[dict]:
         """Get weight history for the last N days."""
@@ -84,7 +106,7 @@ class WeightDatabase:
             WHERE time > now() - {days}d
             ORDER BY time ASC
         """
-        result = self.client.query(query)
+        result = self._query(query)
         points = list(result.get_points())
 
         return [
@@ -106,7 +128,7 @@ class WeightDatabase:
             ORDER BY time DESC
             LIMIT 1
         """
-        result = self.client.query(query)
+        result = self._query(query)
         points = list(result.get_points())
         if points:
             p = points[0]
@@ -127,7 +149,7 @@ class WeightDatabase:
             WHERE time >= '{from_date}T00:00:00Z' AND time <= '{to_date}T23:59:59Z'
             ORDER BY time ASC
         """
-        result = self.client.query(query)
+        result = self._query(query)
         points = list(result.get_points())
 
         return [
