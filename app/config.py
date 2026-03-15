@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     cheat_day: str = "saturday"  # comma-separated: "saturday,sunday"
     day_boundary_hour: int = 6  # day ends at 06:00
     meal_group_hours: int = 2  # photos within 2h = same meal
-    analysis_debounce_seconds: int = 60
+    analysis_debounce_seconds: int = 3
 
     # UI: default period preset (1M, 3M, 6M, 1J, Alle)
     default_period: str = "3M"
