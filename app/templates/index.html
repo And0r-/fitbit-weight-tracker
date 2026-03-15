@@ -8,6 +8,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon-180x180.png">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox@3.3.0/dist/css/glightbox.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -33,6 +34,14 @@
         body { background: #0f172a; }
         .sleep-bar { height: 24px; border-radius: 6px; overflow: hidden; display: flex; }
         .sleep-bar > div { height: 100%; }
+        /* GLightbox dark theme overrides */
+        .glightbox-clean .gslide-description { background: #1e293b; max-width: 600px; margin: 0 auto; border-radius: 12px; }
+        .glightbox-clean .gdesc-inner { padding: 20px; }
+        .glightbox-clean .gslide-title { color: #fff; font-size: 1.1rem; margin-bottom: 10px; font-weight: 600; }
+        .glightbox-clean .gslide-desc { color: #94a3b8; font-size: 0.875rem; line-height: 1.6; }
+        .glightbox-clean .gslide-media { max-height: 65vh; }
+        .glightbox-clean .gslide-media img { border-radius: 8px; }
+        .goverlay { background: rgba(15, 23, 42, 0.95) !important; }
     </style>
 </head>
 <body class="dark bg-dark-bg text-gray-100 min-h-screen">
@@ -786,6 +795,104 @@
             } catch (e) { alert('Fehler: ' + e.message); }
         }
 
+        let foodMeals = [];
+
+        function buildMealDescription(meal, photoIdx, totalPhotos) {
+            let desc = '';
+            const scoreHtml = meal.health_score
+                ? `<span style="font-size:1.5rem;font-weight:700;${meal.health_color === 'green' ? 'color:#34d399' : meal.health_color === 'yellow' ? 'color:#fbbf24' : 'color:#f87171'}">${meal.health_score}</span> `
+                : '';
+
+            if (totalPhotos > 1) {
+                desc += `<div style="color:#64748b;font-size:0.75rem;margin-bottom:8px">Foto ${photoIdx + 1} von ${totalPhotos}</div>`;
+            }
+
+            if (meal.status === 'complete') {
+                desc += `<div style="margin-bottom:10px">${scoreHtml}`;
+                desc += `<span style="font-size:0.8rem;color:#64748b">${meal.total_calories || '?'} kcal | P: ${meal.total_protein_g || '?'}g | K: ${meal.total_carbs_g || '?'}g | F: ${meal.total_fat_g || '?'}g</span></div>`;
+
+                if (meal.items && meal.items.length > 0) {
+                    desc += meal.items.map(i =>
+                        `<div style="display:flex;justify-content:space-between;margin-bottom:2px"><span style="color:#e2e8f0">${i.name}</span><span style="color:#64748b">${i.calories || '?'} kcal</span></div>`
+                    ).join('');
+                }
+
+                if (meal.ai_comment) {
+                    desc += `<div style="margin-top:12px;padding-top:12px;border-top:1px solid #334155"><em>${meal.ai_comment}</em></div>`;
+                }
+            } else if (meal.status === 'pending' || meal.status === 'analyzing') {
+                desc += '<div style="color:#64748b">Analyse laeuft...</div>';
+            } else if (meal.status === 'failed') {
+                desc += '<div style="color:#f87171">Analyse fehlgeschlagen</div>';
+            }
+            return desc;
+        }
+
+        function buildLightboxLinks() {
+            // Build hidden <a> links for GLightbox to scan
+            let container = document.getElementById('foodLightboxLinks');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'foodLightboxLinks';
+                container.style.display = 'none';
+                document.body.appendChild(container);
+            }
+            container.innerHTML = '';
+
+            for (let mi = 0; mi < foodMeals.length; mi++) {
+                const meal = foodMeals[mi];
+                if (meal.photos.length === 0) continue;
+
+                for (let pi = 0; pi < meal.photos.length; pi++) {
+                    const photo = meal.photos[pi];
+                    const time = new Date(meal.time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+                    const dayDate = new Date(meal.day + 'T12:00:00').toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'short' });
+
+                    const a = document.createElement('a');
+                    a.href = photo.display || photo.thumbnail;
+                    a.className = 'glightbox-meal';
+                    a.dataset.glightbox = `title: ${dayDate}, ${time}; description: .meal-desc-${mi}-${pi}`;
+                    a.dataset.mealIndex = mi;
+                    container.appendChild(a);
+
+                    // Hidden description div
+                    const descDiv = document.createElement('div');
+                    descDiv.className = `glightbox-desc meal-desc-${mi}-${pi}`;
+                    descDiv.innerHTML = buildMealDescription(meal, pi, meal.photos.length);
+                    container.appendChild(descDiv);
+                }
+            }
+        }
+
+        let foodLightbox = null;
+        function openMealLightbox(mealIndex) {
+            buildLightboxLinks();
+
+            if (foodLightbox) {
+                foodLightbox.destroy();
+                foodLightbox = null;
+            }
+
+            // Find the slide index for this meal
+            let startSlide = 0;
+            let slideIdx = 0;
+            for (let mi = 0; mi < foodMeals.length; mi++) {
+                if (mi === mealIndex) { startSlide = slideIdx; break; }
+                slideIdx += Math.max(foodMeals[mi].photos.length, 0);
+            }
+
+            foodLightbox = GLightbox({
+                selector: '.glightbox-meal',
+                startAt: startSlide,
+                touchNavigation: true,
+                loop: false,
+                skin: 'clean',
+                openEffect: 'fade',
+                closeEffect: 'fade',
+            });
+            foodLightbox.open();
+        }
+
         async function loadFood() {
             try {
                 const showCheat = document.getElementById('showCheatDay')?.checked || false;
@@ -798,10 +905,14 @@
                     return;
                 }
 
+                foodMeals = data.meals;
                 let html = '';
                 let currentDay = '';
+                let mealIdx = 0;
 
                 for (const meal of data.meals) {
+                    const idx = mealIdx++;
+
                     // Day separator
                     if (meal.day !== currentDay) {
                         currentDay = meal.day;
@@ -810,18 +921,16 @@
                         html += `<div class="mt-6 mb-2 first:mt-0"><h3 class="text-white font-medium">${dayLabel}${meal.is_cheat_day ? ' <span class="text-xs bg-amber-900/50 text-amber-400 px-2 py-0.5 rounded ml-2">Cheat Day</span>' : ''}</h3></div>`;
                     }
 
-                    // Meal card
                     const scoreClass = meal.health_color === 'green' ? 'text-emerald-400' : meal.health_color === 'yellow' ? 'text-amber-400' : meal.health_color === 'red' ? 'text-red-400' : 'text-gray-400';
                     const time = new Date(meal.time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
 
                     html += `<div class="bg-dark-card rounded-xl border border-dark-border overflow-hidden mb-4 ${meal.is_cheat_day ? 'border-dashed border-amber-700' : ''}">`;
 
-                    // Photos row
+                    // Photos row — clickable to open lightbox
                     if (meal.photos.length > 0) {
-                        html += `<div class="flex gap-1 overflow-x-auto p-2 bg-slate-800/50">`;
+                        html += `<div class="flex gap-1 overflow-x-auto p-2 bg-slate-800/50 cursor-pointer" onclick="openMealLightbox(${idx})">`;
                         for (const photo of meal.photos) {
-                            const src = photo.thumbnail || photo.full;
-                            html += `<img src="${src}" alt="" class="h-32 rounded cursor-pointer object-cover" onclick="window.open('${photo.full}', '_blank')">`;
+                            html += `<img src="${photo.thumbnail}" alt="" class="h-32 rounded object-cover hover:opacity-80 transition">`;
                         }
                         html += `</div>`;
                     }
@@ -895,5 +1004,6 @@
         // Load weight data
         loadGoal().then(() => loadPeriod(DEFAULT_PERIOD));
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/glightbox@3.3.0/dist/js/glightbox.min.js"></script>
 </body>
 </html>

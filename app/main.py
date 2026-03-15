@@ -829,8 +829,8 @@ async def get_food_gallery(
     for meal in meals:
         photos = [{
             "id": p.id,
-            "thumbnail": f"/food/thumbs/{p.thumbnail_path.split('/')[-1]}" if p.thumbnail_path else None,
-            "full": f"/food/{p.filename}",
+            "thumbnail": f"/food/{p.thumbnail_path}" if p.thumbnail_path else None,
+            "display": f"/food/{p.display_path}" if p.display_path else None,
             "taken_at": p.photo_taken_at.isoformat(),
             "type": p.photo_type,
         } for p in meal.photos]
@@ -941,17 +941,15 @@ async def delete_meal(
     if not meal:
         raise HTTPException(status_code=404, detail="Meal not found")
 
-    # Delete photo files
+    # Delete photo files (original, display, thumbnail)
     from pathlib import Path
     food_dir = Path("/app/data/food")
     for photo in meal.photos:
-        filepath = food_dir / photo.filename
-        if filepath.exists():
-            filepath.unlink()
-        if photo.thumbnail_path:
-            thumb = food_dir / photo.thumbnail_path
-            if thumb.exists():
-                thumb.unlink()
+        for path in [photo.filename, photo.display_path, photo.thumbnail_path]:
+            if path:
+                fp = food_dir / path
+                if fp.exists():
+                    fp.unlink()
 
     # Delete DB records (cascade: photos, queue jobs)
     db.query(MealPhoto).filter(MealPhoto.meal_id == meal_id).delete()

@@ -84,7 +84,8 @@ class MealPhoto(Base):
     filename = Column(String(255), nullable=False)  # stored path relative to /app/data/food/
     original_filename = Column(String(255), nullable=True)
     photo_taken_at = Column(DateTime, nullable=False)
-    thumbnail_path = Column(String(255), nullable=True)
+    display_path = Column(String(255), nullable=True)  # 1200px, no EXIF
+    thumbnail_path = Column(String(255), nullable=True)  # 400px, no EXIF
     photo_type = Column(String(20), default="unknown")  # cooking|finished|unknown
 
     meal = relationship("Meal", back_populates="photos")

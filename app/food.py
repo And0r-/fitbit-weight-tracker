@@ -15,12 +15,16 @@ from .models import Meal, MealPhoto
 logger = logging.getLogger(__name__)
 
 FOOD_DIR = Path("/app/data/food")
+ORIGINALS_DIR = FOOD_DIR / "originals"
+DISPLAY_DIR = FOOD_DIR / "display"
 THUMB_DIR = FOOD_DIR / "thumbs"
 TZ = ZoneInfo(settings.timezone)
 
 
 def _ensure_dirs():
     FOOD_DIR.mkdir(parents=True, exist_ok=True)
+    ORIGINALS_DIR.mkdir(parents=True, exist_ok=True)
+    DISPLAY_DIR.mkdir(parents=True, exist_ok=True)
     THUMB_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -46,14 +50,20 @@ def _extract_exif_datetime(filepath: Path) -> datetime | None:
         return None
 
 
-def _generate_thumbnail(filepath: Path, thumb_path: Path, size=(400, 400)):
-    """Generate a thumbnail for gallery display."""
+def _strip_exif_and_resize(filepath: Path, output_path: Path, max_dim: int, quality: int = 85):
+    """Resize image, strip EXIF metadata, auto-rotate, and save as JPEG."""
     try:
+        from PIL import ImageOps
         img = Image.open(filepath)
-        img.thumbnail(size, Image.LANCZOS)
-        img.save(thumb_path, "JPEG", quality=85)
+        # Auto-rotate based on EXIF orientation, then strip metadata
+        img = ImageOps.exif_transpose(img)
+        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+        # Save without EXIF (creating new image strips all metadata)
+        clean = Image.new("RGB", img.size)
+        clean.paste(img)
+        clean.save(output_path, "JPEG", quality=quality)
     except Exception as e:
-        logger.error(f"Thumbnail generation failed: {e}")
+        logger.error(f"Image processing failed for {filepath.name}: {e}")
 
 
 def compute_food_day(dt: datetime) -> str:
@@ -115,24 +125,30 @@ def save_uploaded_photo(db: Session, file_data: bytes, original_filename: str) -
     """
     _ensure_dirs()
 
-    # Save file
+    # Save original (with EXIF, for re-analysis)
+    base_name = str(uuid.uuid4())
     ext = Path(original_filename).suffix.lower() or ".jpg"
-    filename = f"{uuid.uuid4()}{ext}"
-    filepath = FOOD_DIR / filename
-    filepath.write_bytes(file_data)
+    original_path = ORIGINALS_DIR / f"{base_name}{ext}"
+    original_path.write_bytes(file_data)
 
-    # Extract timestamp from EXIF or use now
-    photo_taken_at = _extract_exif_datetime(filepath)
+    # Extract timestamp from EXIF before stripping
+    photo_taken_at = _extract_exif_datetime(original_path)
     if photo_taken_at:
         logger.info(f"EXIF timestamp: {photo_taken_at}")
     else:
         photo_taken_at = datetime.now(TZ)
         logger.info(f"No EXIF timestamp, using upload time: {photo_taken_at}")
 
-    # Generate thumbnail
-    thumb_filename = f"thumb_{filename.rsplit('.', 1)[0]}.jpg"
-    thumb_path = THUMB_DIR / thumb_filename
-    _generate_thumbnail(filepath, thumb_path)
+    # Generate display version (1200px, no EXIF)
+    display_filename = f"{base_name}.jpg"
+    _strip_exif_and_resize(original_path, DISPLAY_DIR / display_filename, max_dim=1200, quality=85)
+
+    # Generate thumbnail (400px, no EXIF)
+    thumb_filename = f"{base_name}.jpg"
+    _strip_exif_and_resize(original_path, THUMB_DIR / thumb_filename, max_dim=400, quality=80)
+
+    # filename points to the original (for AI analysis)
+    filename = f"originals/{base_name}{ext}"
 
     # Find or create meal
     meal = find_or_create_meal(db, photo_taken_at)
@@ -148,6 +164,7 @@ def save_uploaded_photo(db: Session, file_data: bytes, original_filename: str) -
         filename=filename,
         original_filename=original_filename,
         photo_taken_at=naive_taken,
+        display_path=f"display/{display_filename}",
         thumbnail_path=f"thumbs/{thumb_filename}",
     )
     db.add(photo)
