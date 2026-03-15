@@ -17,6 +17,7 @@ from .database import get_db, init_db, SessionLocal
 from .fitbit import fitbit_client
 from .food import save_uploaded_photo
 from .food_queue import get_queue_status, retry_failed_jobs, schedule_analysis
+from .streak import calculate_streak
 from .influxdb_client import weight_db
 from .models import AccessLog, AnalysisQueue, Meal, MealPhoto, ShareToken
 from .oura import oura_client
@@ -878,6 +879,7 @@ async def get_food_gallery(
         "limit": limit,
         "has_more": offset + limit < total,
         "show_cheat": show_cheat,
+        "streak": calculate_streak(db) if offset == 0 else None,
     }
 
 

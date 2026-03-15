@@ -1068,6 +1068,22 @@
                     return;
                 }
 
+                // Streak card (only on first load)
+                if (reset && data.streak && data.streak.days > 0) {
+                    const s = data.streak;
+                    const flames = s.days >= 30 ? '🔥🔥🔥' : s.days >= 7 ? '🔥🔥' : '🔥';
+                    const streakColor = s.days >= 14 ? 'text-emerald-400' : s.days >= 7 ? 'text-amber-400' : 'text-white';
+                    container.innerHTML = `<div class="bg-gradient-to-r from-dark-card to-slate-800 rounded-xl border border-dark-border p-5 mb-6">
+                        <div class="flex items-center gap-3">
+                            <span class="text-3xl">${flames}</span>
+                            <div>
+                                <p class="text-2xl font-bold ${streakColor}">${s.days} Tage Streak!</p>
+                                <p class="text-gray-400 text-sm">Keine rote Mahlzeit seit ${s.since ? new Date(s.since + 'T12:00:00').toLocaleDateString('de-CH', { day: 'numeric', month: 'long' }) : '?'}${s.best > s.days ? ` — Rekord: ${s.best} Tage` : s.days >= s.best && s.days >= 7 ? ' — Neuer Rekord!' : ''}</p>
+                            </div>
+                        </div>
+                    </div>`;
+                }
+
                 // Determine last day shown for day separator continuity
                 let currentDay = foodMeals.length > 0 ? foodMeals[foodMeals.length - 1].day : '';
 

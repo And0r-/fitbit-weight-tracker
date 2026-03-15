@@ -8,6 +8,7 @@ from .config import settings
 from .database import SessionLocal
 from .influxdb_client import weight_db
 from .models import Meal
+from .streak import calculate_streak
 
 logger = logging.getLogger(__name__)
 
@@ -441,6 +442,7 @@ def _build_food_summary() -> dict:
                 "days_logged": len(set(m.day for m in all_week_meals)),
             },
             "recent_meals": meals_list,
+            "streak": calculate_streak(db),
         }
     finally:
         db.close()
