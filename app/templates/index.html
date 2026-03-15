@@ -196,7 +196,11 @@
                 <div class="flex gap-2 items-center">
                     <label class="flex items-center gap-2 text-sm text-gray-400">
                         <input type="checkbox" id="showCheatDay" onchange="loadFood()" class="rounded">
-                        <span>Cheat Day anzeigen</span>
+                        <span>Cheat Day</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-gray-400">
+                        <input type="checkbox" id="foodShowAll" onchange="loadFood()" class="rounded">
+                        <span>Alle laden</span>
                     </label>
                 </div>
                 {% if is_admin %}
@@ -896,7 +900,8 @@
         async function loadFood() {
             try {
                 const showCheat = document.getElementById('showCheatDay')?.checked || false;
-                const data = await fetchAPI(`/api/food?days=14&show_cheat=${showCheat}`);
+                const foodDays = document.getElementById('foodShowAll')?.checked ? 365 : 14;
+                const data = await fetchAPI(`/api/food?days=${foodDays}&show_cheat=${showCheat}`);
                 ouraTabsLoaded.food = true;
                 const container = document.getElementById('foodContent');
 
