@@ -398,20 +398,7 @@ def _build_food_summary() -> dict:
             .all()
         )
 
-        # Detail list of all meals
-        meals_list = []
-        for m in all_week_meals:
-            items_summary = ", ".join(i["name"] for i in (m.items_json or []))
-            meals_list.append({
-                "day": m.day,
-                "time": m.first_photo_at.strftime("%H:%M"),
-                "health_score": m.health_score,
-                "calories": m.total_calories,
-                "items": items_summary,
-                "is_cheat_day": m.is_cheat_day,
-            })
-
-        # Stats (excluding cheat days)
+        # Stats (excluding cheat days for averages)
         non_cheat = [m for m in all_week_meals if not m.is_cheat_day]
         scores = [m.health_score for m in non_cheat if m.health_score]
 
@@ -421,29 +408,38 @@ def _build_food_summary() -> dict:
                 daily_cals.setdefault(m.day, 0)
                 daily_cals[m.day] += m.total_calories
 
-        # Best and worst (all meals, with cheat_day flag)
+        # Find best/worst meal IDs
         scored_meals = [m for m in all_week_meals if m.health_score]
-        best = max(scored_meals, key=lambda m: m.health_score) if scored_meals else None
-        worst = min(scored_meals, key=lambda m: m.health_score) if scored_meals else None
+        best_id = max(scored_meals, key=lambda m: m.health_score).id if scored_meals else None
+        worst_id = min(scored_meals, key=lambda m: m.health_score).id if scored_meals else None
 
-        week_stats = {
-            "avg_score": _safe_mean(scores),
-            "avg_daily_calories": _safe_mean(list(daily_cals.values())) if daily_cals else None,
-            "meals_logged": len(all_week_meals),
-            "days_logged": len(set(m.day for m in all_week_meals)),
-        }
-
-        if best:
-            items_best = ", ".join(i["name"] for i in (best.items_json or []))
-            week_stats["best_meal"] = {"day": best.day, "score": best.health_score, "items": items_best, "is_cheat_day": best.is_cheat_day}
-        if worst:
-            items_worst = ", ".join(i["name"] for i in (worst.items_json or []))
-            week_stats["worst_meal"] = {"day": worst.day, "score": worst.health_score, "items": items_worst, "is_cheat_day": worst.is_cheat_day}
+        # Detail list of all meals with best/worst flags
+        meals_list = []
+        for m in all_week_meals:
+            items_summary = ", ".join(i["name"] for i in (m.items_json or []))
+            entry = {
+                "day": m.day,
+                "time": m.first_photo_at.strftime("%H:%M"),
+                "health_score": m.health_score,
+                "calories": m.total_calories,
+                "items": items_summary,
+                "is_cheat_day": m.is_cheat_day,
+            }
+            if m.id == best_id:
+                entry["is_best"] = True
+            if m.id == worst_id:
+                entry["is_worst"] = True
+            meals_list.append(entry)
 
         return {
             "today": today_list if today_list else None,
             "today_calories": today_calories if today_calories else None,
-            "last_7_days": week_stats,
+            "last_7_days": {
+                "avg_score": _safe_mean(scores),
+                "avg_daily_calories": _safe_mean(list(daily_cals.values())) if daily_cals else None,
+                "meals_logged": len(all_week_meals),
+                "days_logged": len(set(m.day for m in all_week_meals)),
+            },
             "recent_meals": meals_list,
         }
     finally:
