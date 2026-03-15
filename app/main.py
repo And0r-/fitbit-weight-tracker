@@ -867,3 +867,96 @@ async def retry_food_analysis(
 
     count = retry_failed_jobs(db)
     return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/api/food/{meal_id}/correct")
+async def correct_meal(
+    request: Request,
+    meal_id: int,
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Submit a correction note and re-trigger analysis.
+
+    Send JSON body: {"note": "Das sind keine Toasts sondern Protein-Dreiecke, 380 kcal"}
+    The note is appended to the AI prompt for re-analysis.
+    """
+    share_token = get_token_from_request(request, token, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    meal = db.query(Meal).filter(Meal.id == meal_id).first()
+    if not meal:
+        raise HTTPException(status_code=404, detail="Meal not found")
+
+    body = await request.json()
+    note = body.get("note", "").strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="Correction note required")
+
+    # Append to existing correction or set new one
+    if meal.correction_note:
+        meal.correction_note = f"{meal.correction_note}\n{note}"
+    else:
+        meal.correction_note = note
+
+    schedule_analysis(db, meal)
+
+    return {"status": "re-analysis scheduled", "meal_id": meal_id, "correction": meal.correction_note}
+
+
+@app.post("/api/food/{meal_id}/reanalyze")
+async def reanalyze_meal(
+    request: Request,
+    meal_id: int,
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Re-trigger analysis without correction (e.g. after prompt update)."""
+    share_token = get_token_from_request(request, token, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    meal = db.query(Meal).filter(Meal.id == meal_id).first()
+    if not meal:
+        raise HTTPException(status_code=404, detail="Meal not found")
+
+    schedule_analysis(db, meal)
+    return {"status": "re-analysis scheduled", "meal_id": meal_id}
+
+
+@app.delete("/api/food/{meal_id}")
+async def delete_meal(
+    request: Request,
+    meal_id: int,
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Delete a meal and all its photos."""
+    share_token = get_token_from_request(request, token, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    meal = db.query(Meal).filter(Meal.id == meal_id).first()
+    if not meal:
+        raise HTTPException(status_code=404, detail="Meal not found")
+
+    # Delete photo files
+    from pathlib import Path
+    food_dir = Path("/app/data/food")
+    for photo in meal.photos:
+        filepath = food_dir / photo.filename
+        if filepath.exists():
+            filepath.unlink()
+        if photo.thumbnail_path:
+            thumb = food_dir / photo.thumbnail_path
+            if thumb.exists():
+                thumb.unlink()
+
+    # Delete DB records (cascade: photos, queue jobs)
+    db.query(MealPhoto).filter(MealPhoto.meal_id == meal_id).delete()
+    db.query(AnalysisQueue).filter(AnalysisQueue.meal_id == meal_id).delete()
+    db.delete(meal)
+    db.commit()
+
+    return {"status": "deleted", "meal_id": meal_id}

@@ -21,13 +21,15 @@ def init_db():
     """Create all tables and run migrations."""
     Base.metadata.create_all(bind=engine)
     with engine.connect() as conn:
-        for col, default in [
-            ("can_view_oura", "FALSE"),
-            ("can_view_food", "FALSE"),
-        ]:
+        # ShareToken migrations
+        for col in ("can_view_oura", "can_view_food"):
             conn.execute(text(
-                f"ALTER TABLE share_tokens ADD COLUMN IF NOT EXISTS {col} BOOLEAN DEFAULT {default}"
+                f"ALTER TABLE share_tokens ADD COLUMN IF NOT EXISTS {col} BOOLEAN DEFAULT FALSE"
             ))
+        # Meal migrations
+        conn.execute(text(
+            "ALTER TABLE meals ADD COLUMN IF NOT EXISTS correction_note TEXT"
+        ))
         conn.commit()
 
 

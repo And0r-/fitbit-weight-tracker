@@ -66,6 +66,7 @@ class Meal(Base):
     health_color = Column(String(10), nullable=True)  # green/yellow/red
     ai_comment = Column(Text, nullable=True)
     items_json = Column(JSONB, nullable=True)  # [{name, portion, calories, ...}]
+    correction_note = Column(Text, nullable=True)  # User correction for re-analysis
 
     photos = relationship("MealPhoto", back_populates="meal", order_by="MealPhoto.photo_taken_at")
     queue_jobs = relationship("AnalysisQueue", back_populates="meal")

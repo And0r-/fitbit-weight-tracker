@@ -111,7 +111,7 @@ Das ist bewusst Teil der Ernaehrungsstrategie (Slow Carb Prinzip).
 """
 
 
-async def analyze_meal_photos(photo_paths: list[str], is_cheat_day: bool = False) -> dict:
+async def analyze_meal_photos(photo_paths: list[str], is_cheat_day: bool = False, correction_note: str | None = None) -> dict:
     """Analyze one or more food photos using Claude Vision.
 
     Args:
@@ -150,6 +150,8 @@ async def analyze_meal_photos(photo_paths: list[str], is_cheat_day: bool = False
     prompt = ANALYSIS_PROMPT
     if is_cheat_day:
         prompt += CHEAT_DAY_ADDENDUM
+    if correction_note:
+        prompt += f"\n\nKORREKTUR VOM BENUTZER: {correction_note}\nBitte beruecksichtige diese Korrektur bei deiner Analyse. Der Benutzer weiss besser was auf dem Foto ist."
     content.append({"type": "text", "text": prompt})
 
     logger.info(f"Analyzing {len(photo_paths)} photo(s) with Claude Sonnet...")
