@@ -7,6 +7,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from .config import settings
 from .fitbit import fitbit_client
+from .food_queue import process_queue
 from .influxdb_client import weight_db
 from .oura import oura_client
 
@@ -185,6 +186,14 @@ class SyncScheduler:
             trigger=IntervalTrigger(minutes=settings.sync_interval_minutes),
             id="oura_sync",
             name="Oura Ring Sync",
+            replace_existing=True,
+        )
+
+        self.scheduler.add_job(
+            process_queue,
+            trigger=IntervalTrigger(seconds=10),
+            id="food_analysis_queue",
+            name="Food Analysis Queue Worker",
             replace_existing=True,
         )
 

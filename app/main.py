@@ -5,7 +5,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import Cookie, Depends, FastAPI, Form, HTTPException, Query, Request
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -15,8 +15,10 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db, init_db, SessionLocal
 from .fitbit import fitbit_client
+from .food import save_uploaded_photo
+from .food_queue import get_queue_status, retry_failed_jobs, schedule_analysis
 from .influxdb_client import weight_db
-from .models import AccessLog, ShareToken
+from .models import AccessLog, Meal, MealPhoto, ShareToken
 from .oura import oura_client
 from .scheduler import sync_scheduler
 from .summary import build_health_summary
@@ -84,6 +86,16 @@ templates = Jinja2Templates(directory="app/templates")
 
 try:
     app.mount("/static", StaticFiles(directory="static"), name="static")
+except RuntimeError:
+    pass
+
+# Serve food photos
+from pathlib import Path
+food_dir = Path("/app/data/food")
+food_dir.mkdir(parents=True, exist_ok=True)
+(food_dir / "thumbs").mkdir(exist_ok=True)
+try:
+    app.mount("/food", StaticFiles(directory=str(food_dir)), name="food")
 except RuntimeError:
     pass
 
@@ -158,6 +170,7 @@ async def index(
             "token": share_token.token,
             "is_admin": share_token.is_admin,
             "can_view_oura": share_token.can_view_oura,
+            "can_view_food": share_token.can_view_food,
             "default_period": settings.default_period,
         },
     )
@@ -342,6 +355,7 @@ async def admin_page(
             "fitbit_connected": fitbit_client.is_authenticated(),
             "oura_connected": oura_client.is_authenticated(),
             "sync_interval": settings.sync_interval_minutes,
+            "queue_status": get_queue_status(db),
         },
     )
 
@@ -352,6 +366,7 @@ async def create_token(
     name: str = Form(...),
     is_admin: bool = Form(False),
     can_view_oura: bool = Form(False),
+    can_view_food: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     """Create a new token."""
@@ -364,6 +379,7 @@ async def create_token(
         name=name,
         is_admin=is_admin,
         can_view_oura=can_view_oura,
+        can_view_food=can_view_food,
     )
     db.add(new_token)
     db.commit()
@@ -423,6 +439,25 @@ async def toggle_oura(
     token = db.query(ShareToken).filter(ShareToken.id == token_id).first()
     if token:
         token.can_view_oura = not token.can_view_oura
+        db.commit()
+
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/tokens/{token_id}/toggle-food")
+async def toggle_food(
+    request: Request,
+    token_id: int,
+    db: Session = Depends(get_db),
+):
+    """Toggle food access for a token."""
+    share_token = get_token_from_request(request, None, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    token = db.query(ShareToken).filter(ShareToken.id == token_id).first()
+    if token:
+        token.can_view_food = not token.can_view_food
         db.commit()
 
     return RedirectResponse("/admin", status_code=303)
@@ -709,3 +744,126 @@ async def get_health_summary(
             pass
 
     return await build_health_summary(goal_weight=goal)
+
+
+# ============================================
+# Food Tracking
+# ============================================
+
+
+def _require_food(share_token: ShareToken | None):
+    """Check token has food access."""
+    if not share_token:
+        raise HTTPException(status_code=401, detail="Token required")
+    if not share_token.can_view_food and not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Food access not granted")
+
+
+@app.post("/api/food/upload")
+async def upload_food_photos(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Upload food photos. Only admins can upload."""
+    share_token = get_token_from_request(request, token, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    results = []
+    meals_to_analyze = set()
+
+    for file in files:
+        if not file.content_type or not file.content_type.startswith("image/"):
+            continue
+
+        data = await file.read()
+        if len(data) > 10 * 1024 * 1024:  # 10MB limit
+            continue
+
+        meal, photo = save_uploaded_photo(db, data, file.filename or "upload.jpg")
+        meals_to_analyze.add(meal.id)
+        results.append({
+            "photo_id": photo.id,
+            "meal_id": meal.id,
+            "meal_day": meal.day,
+            "photo_taken_at": photo.photo_taken_at.isoformat(),
+        })
+
+    # Schedule analysis for affected meals (with debounce)
+    for meal_id in meals_to_analyze:
+        meal = db.query(Meal).filter(Meal.id == meal_id).first()
+        if meal:
+            schedule_analysis(db, meal)
+
+    return {"uploaded": len(results), "photos": results}
+
+
+@app.get("/api/food")
+async def get_food_gallery(
+    request: Request,
+    days: int = Query(default=7, ge=1, le=90),
+    show_cheat: bool = Query(default=False),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get food gallery data."""
+    share_token = get_token_from_request(request, token, db)
+    _require_food(share_token)
+
+    from .food import compute_food_day
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(settings.timezone)
+    cutoff_day = (datetime.now(tz) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    query = db.query(Meal).filter(Meal.day >= cutoff_day)
+    if not show_cheat:
+        query = query.filter(Meal.is_cheat_day == False)
+
+    meals = query.order_by(Meal.first_photo_at.desc()).all()
+
+    result = []
+    for meal in meals:
+        photos = [{
+            "id": p.id,
+            "thumbnail": f"/food/thumbs/{p.thumbnail_path.split('/')[-1]}" if p.thumbnail_path else None,
+            "full": f"/food/{p.filename}",
+            "taken_at": p.photo_taken_at.isoformat(),
+            "type": p.photo_type,
+        } for p in meal.photos]
+
+        result.append({
+            "id": meal.id,
+            "day": meal.day,
+            "time": meal.first_photo_at.isoformat(),
+            "is_cheat_day": meal.is_cheat_day,
+            "status": meal.analysis_status,
+            "photos": photos,
+            "health_score": meal.health_score,
+            "health_color": meal.health_color,
+            "total_calories": meal.total_calories,
+            "total_protein_g": meal.total_protein_g,
+            "total_carbs_g": meal.total_carbs_g,
+            "total_fat_g": meal.total_fat_g,
+            "items": meal.items_json,
+            "ai_comment": meal.ai_comment,
+        })
+
+    return {"meals": result, "days": days, "show_cheat": show_cheat}
+
+
+@app.post("/admin/food/retry")
+async def retry_food_analysis(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Retry all failed food analyses."""
+    share_token = get_token_from_request(request, None, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    count = retry_failed_jobs(db)
+    return RedirectResponse("/admin", status_code=303)

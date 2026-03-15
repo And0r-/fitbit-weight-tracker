@@ -51,13 +51,18 @@
             </div>
         </header>
 
-        {% if can_view_oura %}
+        {% if can_view_oura or can_view_food %}
         <!-- Tab Navigation -->
-        <nav class="flex gap-1 mb-8 bg-dark-card rounded-xl p-1 border border-dark-border">
-            <button onclick="switchTab('weight')" class="tab-btn flex-1 px-4 py-2 rounded-lg text-sm font-medium transition" data-tab="weight">Gewicht</button>
-            <button onclick="switchTab('sleep')" class="tab-btn flex-1 px-4 py-2 rounded-lg text-sm font-medium transition" data-tab="sleep">Schlaf</button>
-            <button onclick="switchTab('readiness')" class="tab-btn flex-1 px-4 py-2 rounded-lg text-sm font-medium transition" data-tab="readiness">Readiness</button>
-            <button onclick="switchTab('heartrate')" class="tab-btn flex-1 px-4 py-2 rounded-lg text-sm font-medium transition" data-tab="heartrate">Heart Rate</button>
+        <nav class="flex gap-1 mb-8 bg-dark-card rounded-xl p-1 border border-dark-border overflow-x-auto">
+            <button onclick="switchTab('weight')" class="tab-btn flex-1 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" data-tab="weight">Gewicht</button>
+            {% if can_view_food %}
+            <button onclick="switchTab('food')" class="tab-btn flex-1 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" data-tab="food">Essen</button>
+            {% endif %}
+            {% if can_view_oura %}
+            <button onclick="switchTab('sleep')" class="tab-btn flex-1 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" data-tab="sleep">Schlaf</button>
+            <button onclick="switchTab('readiness')" class="tab-btn flex-1 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" data-tab="readiness">Readiness</button>
+            <button onclick="switchTab('heartrate')" class="tab-btn flex-1 px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap" data-tab="heartrate">Heart Rate</button>
+            {% endif %}
         </nav>
         {% endif %}
 
@@ -172,19 +177,46 @@
             </div>
         </div>
         {% endif %}
+
+        {% if can_view_food %}
+        <!-- ============================================ -->
+        <!-- TAB: Food -->
+        <!-- ============================================ -->
+        <div id="tab-food" class="tab-content hidden">
+            <div class="flex flex-wrap gap-4 mb-4 items-center justify-between">
+                <div class="flex gap-2 items-center">
+                    <label class="flex items-center gap-2 text-sm text-gray-400">
+                        <input type="checkbox" id="showCheatDay" onchange="loadFood()" class="rounded">
+                        <span>Cheat Day anzeigen</span>
+                    </label>
+                </div>
+                {% if is_admin %}
+                <label class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition cursor-pointer text-sm">
+                    Fotos hochladen
+                    <input type="file" id="foodUpload" multiple accept="image/*" class="hidden" onchange="uploadFoodPhotos(this.files)">
+                </label>
+                {% endif %}
+            </div>
+            <div id="foodContent">
+                <p class="text-gray-400">Laden...</p>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <script>
         // Persist token in localStorage (resilient against browser cookie cleanup)
         const TOKEN = '{{ token }}';
         const CAN_VIEW_OURA = {{ 'true' if can_view_oura else 'false' }};
+        const CAN_VIEW_FOOD = {{ 'true' if can_view_food else 'false' }};
+        const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
         localStorage.setItem('token', TOKEN);
 
         let chart = null;
         let hrChart = null;
         let goalWeight = null;
         let currentHrHours = 24;
-        let ouraTabsLoaded = { sleep: false, readiness: false, heartrate: false };
+        let ouraTabsLoaded = { sleep: false, readiness: false, heartrate: false, food: false };
 
         const PERIOD_DAYS = { '1M': 30, '3M': 90, '6M': 180, '1J': 365, 'Alle': 9999 };
         const DEFAULT_PERIOD = '{{ default_period }}';
@@ -246,11 +278,14 @@
                 activeBtn.classList.remove('text-gray-400', 'hover:text-white');
             }
 
-            // Lazy load Oura tabs
-            if (CAN_VIEW_OURA && !ouraTabsLoaded[tab]) {
-                if (tab === 'sleep') loadSleep();
-                if (tab === 'readiness') loadReadiness();
-                if (tab === 'heartrate') loadHeartRate(24);
+            // Lazy load tabs
+            if (!ouraTabsLoaded[tab]) {
+                if (CAN_VIEW_OURA) {
+                    if (tab === 'sleep') loadSleep();
+                    if (tab === 'readiness') loadReadiness();
+                    if (tab === 'heartrate') loadHeartRate(24);
+                }
+                if (CAN_VIEW_FOOD && tab === 'food') loadFood();
             }
         }
 
@@ -696,11 +731,122 @@
         }
 
         // ============================================
+        // Food Tab
+        // ============================================
+
+        async function uploadFoodPhotos(files) {
+            if (!files.length) return;
+            const formData = new FormData();
+            for (const f of files) formData.append('files', f);
+
+            try {
+                const resp = await fetch('/api/food/upload?token=' + TOKEN, { method: 'POST', body: formData });
+                if (!resp.ok) throw new Error('Upload failed');
+                const data = await resp.json();
+                // Reload food gallery after short delay (debounce will handle analysis)
+                setTimeout(() => loadFood(), 1000);
+            } catch (e) {
+                console.error('Upload error:', e);
+                alert('Upload fehlgeschlagen');
+            }
+            // Reset file input
+            document.getElementById('foodUpload').value = '';
+        }
+
+        async function loadFood() {
+            try {
+                const showCheat = document.getElementById('showCheatDay')?.checked || false;
+                const data = await fetchAPI(`/api/food?days=14&show_cheat=${showCheat}`);
+                ouraTabsLoaded.food = true;
+                const container = document.getElementById('foodContent');
+
+                if (!data.meals || data.meals.length === 0) {
+                    container.innerHTML = '<p class="text-gray-400">Keine Essens-Daten vorhanden. Lade Fotos hoch um zu starten.</p>';
+                    return;
+                }
+
+                let html = '';
+                let currentDay = '';
+
+                for (const meal of data.meals) {
+                    // Day separator
+                    if (meal.day !== currentDay) {
+                        currentDay = meal.day;
+                        const dayDate = new Date(meal.day + 'T12:00:00');
+                        const dayLabel = dayDate.toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long' });
+                        html += `<div class="mt-6 mb-2 first:mt-0"><h3 class="text-white font-medium">${dayLabel}${meal.is_cheat_day ? ' <span class="text-xs bg-amber-900/50 text-amber-400 px-2 py-0.5 rounded ml-2">Cheat Day</span>' : ''}</h3></div>`;
+                    }
+
+                    // Meal card
+                    const scoreClass = meal.health_color === 'green' ? 'text-emerald-400' : meal.health_color === 'yellow' ? 'text-amber-400' : meal.health_color === 'red' ? 'text-red-400' : 'text-gray-400';
+                    const time = new Date(meal.time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+
+                    html += `<div class="bg-dark-card rounded-xl border border-dark-border overflow-hidden mb-4 ${meal.is_cheat_day ? 'border-dashed border-amber-700' : ''}">`;
+
+                    // Photos row
+                    if (meal.photos.length > 0) {
+                        html += `<div class="flex gap-1 overflow-x-auto p-2 bg-slate-800/50">`;
+                        for (const photo of meal.photos) {
+                            const src = photo.thumbnail || photo.full;
+                            html += `<img src="${src}" alt="" class="h-32 rounded cursor-pointer object-cover" onclick="window.open('${photo.full}', '_blank')">`;
+                        }
+                        html += `</div>`;
+                    }
+
+                    html += `<div class="p-4">`;
+                    html += `<div class="flex justify-between items-start mb-2">`;
+                    html += `<span class="text-gray-400 text-sm">${time} Uhr</span>`;
+
+                    if (meal.status === 'complete' && meal.health_score) {
+                        html += `<span class="text-2xl font-bold ${scoreClass}">${meal.health_score}</span>`;
+                    } else if (meal.status === 'pending' || meal.status === 'analyzing') {
+                        html += `<span class="text-gray-500 text-sm animate-pulse">Analyse laeuft...</span>`;
+                    } else if (meal.status === 'failed') {
+                        html += `<span class="text-red-400 text-sm">Analyse fehlgeschlagen</span>`;
+                    }
+                    html += `</div>`;
+
+                    // Analysis results
+                    if (meal.status === 'complete') {
+                        if (meal.items && meal.items.length > 0) {
+                            html += `<div class="space-y-1 mb-3">`;
+                            for (const item of meal.items) {
+                                html += `<div class="flex justify-between text-sm">
+                                    <span class="text-white">${item.name} <span class="text-gray-500">${item.portion || ''}</span></span>
+                                    <span class="text-gray-400">${item.calories || '?'} kcal</span>
+                                </div>`;
+                            }
+                            html += `</div>`;
+                        }
+
+                        html += `<div class="flex gap-4 text-xs text-gray-500 mb-2">
+                            <span>${meal.total_calories || '?'} kcal</span>
+                            <span>P: ${meal.total_protein_g || '?'}g</span>
+                            <span>K: ${meal.total_carbs_g || '?'}g</span>
+                            <span>F: ${meal.total_fat_g || '?'}g</span>
+                        </div>`;
+
+                        if (meal.ai_comment) {
+                            html += `<p class="text-sm text-gray-400 italic">${meal.ai_comment}</p>`;
+                        }
+                    }
+
+                    html += `</div></div>`;
+                }
+
+                container.innerHTML = html;
+            } catch (e) {
+                console.error('Error loading food:', e);
+                document.getElementById('foodContent').innerHTML = '<p class="text-red-400">Fehler beim Laden.</p>';
+            }
+        }
+
+        // ============================================
         // Init
         // ============================================
 
         // Set initial active tab
-        if (CAN_VIEW_OURA) {
+        if (CAN_VIEW_OURA || CAN_VIEW_FOOD) {
             switchTab('weight');
         }
 

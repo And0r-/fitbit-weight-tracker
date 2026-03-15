@@ -84,6 +84,34 @@
             {% endif %}
         </div>
 
+        <!-- Food Analysis Queue -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-8">
+            <h2 class="text-lg font-semibold mb-4">Food Analyse</h2>
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div class="flex items-center gap-4 text-sm">
+                    {% if queue_status.pending > 0 %}
+                    <span class="text-amber-400">{{ queue_status.pending }} ausstehend</span>
+                    {% endif %}
+                    {% if queue_status.processing > 0 %}
+                    <span class="text-blue-400">{{ queue_status.processing }} in Analyse</span>
+                    {% endif %}
+                    {% if queue_status.has_errors %}
+                    <span class="text-red-400">{{ queue_status.failed }} fehlgeschlagen</span>
+                    {% endif %}
+                    {% if not queue_status.pending and not queue_status.processing and not queue_status.has_errors %}
+                    <span class="text-emerald-400">Keine ausstehenden Analysen</span>
+                    {% endif %}
+                </div>
+                {% if queue_status.has_errors %}
+                <form method="POST" action="/admin/food/retry">
+                    <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition">
+                        Fehlgeschlagene erneut versuchen
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- Create Token -->
         <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-8">
             <h2 class="text-lg font-semibold mb-4">Neuen Token erstellen</h2>
@@ -101,7 +129,11 @@
                 </label>
                 <label class="flex items-center gap-2 text-gray-400">
                     <input type="checkbox" name="can_view_oura" value="true" class="rounded">
-                    <span>Oura-Zugang</span>
+                    <span>Oura</span>
+                </label>
+                <label class="flex items-center gap-2 text-gray-400">
+                    <input type="checkbox" name="can_view_food" value="true" class="rounded">
+                    <span>Food</span>
                 </label>
                 <button
                     type="submit"
@@ -153,6 +185,9 @@
                                     {% endif %}
                                     <form method="POST" action="/admin/tokens/{{ token.id }}/toggle-oura" class="inline">
                                         <button type="submit" class="{{ 'bg-purple-900/50 text-purple-400' if token.can_view_oura else 'bg-slate-700 text-gray-500' }} px-2 py-1 rounded text-xs hover:opacity-80 transition">Oura</button>
+                                    </form>
+                                    <form method="POST" action="/admin/tokens/{{ token.id }}/toggle-food" class="inline">
+                                        <button type="submit" class="{{ 'bg-emerald-900/50 text-emerald-400' if token.can_view_food else 'bg-slate-700 text-gray-500' }} px-2 py-1 rounded text-xs hover:opacity-80 transition">Food</button>
                                     </form>
                                 </div>
                             </td>

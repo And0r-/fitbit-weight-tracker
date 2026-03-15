@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     oura_client_secret: str = ""
     oura_redirect_uri: str = "http://localhost:8080/oura/callback"
 
+    # Anthropic API (for food analysis)
+    anthropic_api_key: str = ""
+
+    # Food tracking
+    cheat_day: str = "saturday"  # comma-separated: "saturday,sunday"
+    day_boundary_hour: int = 6  # day ends at 06:00
+    meal_group_hours: int = 2  # photos within 2h = same meal
+    analysis_debounce_seconds: int = 60
+
     # UI: default period preset (1M, 3M, 6M, 1J, Alle)
     default_period: str = "3M"
 
