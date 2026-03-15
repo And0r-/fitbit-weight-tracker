@@ -5,7 +5,9 @@ from statistics import mean, stdev
 from zoneinfo import ZoneInfo
 
 from .config import settings
+from .database import SessionLocal
 from .influxdb_client import weight_db
+from .models import Meal
 
 logger = logging.getLogger(__name__)
 
@@ -349,6 +351,94 @@ def _build_workout_summary() -> dict:
     }
 
 
+def _build_food_summary() -> dict:
+    """Food: today's meals, 7-day stats, recent meals."""
+    db = SessionLocal()
+    try:
+        now = _local_now()
+        today = now.strftime("%Y-%m-%d")
+        # Compute today with 06:00 boundary
+        if now.hour < settings.day_boundary_hour:
+            today = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        cutoff_7d = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+
+        # Today's meals
+        today_meals = (
+            db.query(Meal)
+            .filter(Meal.day == today, Meal.analysis_status == "complete")
+            .order_by(Meal.first_photo_at.asc())
+            .all()
+        )
+
+        today_list = []
+        today_calories = 0
+        for m in today_meals:
+            items_summary = ", ".join(i["name"] for i in (m.items_json or []))
+            today_list.append({
+                "time": m.first_photo_at.strftime("%H:%M"),
+                "health_score": m.health_score,
+                "health_color": m.health_color,
+                "calories": m.total_calories,
+                "protein_g": m.total_protein_g,
+                "carbs_g": m.total_carbs_g,
+                "fat_g": m.total_fat_g,
+                "items": items_summary,
+                "is_cheat_day": m.is_cheat_day,
+                "comment": m.ai_comment,
+            })
+            if m.total_calories and not m.is_cheat_day:
+                today_calories += m.total_calories
+
+        # 7-day stats (excluding cheat days)
+        week_meals = (
+            db.query(Meal)
+            .filter(
+                Meal.day >= cutoff_7d,
+                Meal.analysis_status == "complete",
+                Meal.is_cheat_day == False,
+            )
+            .all()
+        )
+
+        scores = [m.health_score for m in week_meals if m.health_score]
+        calories = [m.total_calories for m in week_meals if m.total_calories]
+
+        # Daily calorie totals for the week
+        daily_cals = {}
+        for m in week_meals:
+            if m.total_calories:
+                daily_cals.setdefault(m.day, 0)
+                daily_cals[m.day] += m.total_calories
+
+        # Best and worst meals
+        scored_meals = [m for m in week_meals if m.health_score]
+        best = max(scored_meals, key=lambda m: m.health_score) if scored_meals else None
+        worst = min(scored_meals, key=lambda m: m.health_score) if scored_meals else None
+
+        week_stats = {
+            "avg_score": _safe_mean(scores),
+            "avg_daily_calories": _safe_mean(list(daily_cals.values())) if daily_cals else None,
+            "meals_logged": len(week_meals),
+            "days_logged": len(daily_cals),
+        }
+
+        if best:
+            items_best = ", ".join(i["name"] for i in (best.items_json or []))
+            week_stats["best_meal"] = {"day": best.day, "score": best.health_score, "items": items_best}
+        if worst:
+            items_worst = ", ".join(i["name"] for i in (worst.items_json or []))
+            week_stats["worst_meal"] = {"day": worst.day, "score": worst.health_score, "items": items_worst}
+
+        return {
+            "today": today_list if today_list else None,
+            "today_calories": today_calories if today_calories else None,
+            "last_7_days": week_stats,
+        }
+    finally:
+        db.close()
+
+
 async def build_health_summary(goal_weight: float | None = None) -> dict:
     """Build compact health summary for AI consumption."""
     now = _local_now()
@@ -419,5 +509,12 @@ async def build_health_summary(goal_weight: float | None = None) -> dict:
     except Exception as e:
         logger.error(f"Summary workouts failed: {e}")
         result["workouts"] = {"error": str(e)}
+
+    # Food
+    try:
+        result["food"] = _build_food_summary()
+    except Exception as e:
+        logger.error(f"Summary food failed: {e}")
+        result["food"] = {"error": str(e)}
 
     return result
