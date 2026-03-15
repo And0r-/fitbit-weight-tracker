@@ -926,6 +926,9 @@
         }
 
         let foodLightbox = null;
+        // Map slide index -> meal index
+        let slideToMeal = [];
+
         function openMealLightbox(mealIndex) {
             buildLightboxLinks();
 
@@ -934,12 +937,16 @@
                 foodLightbox = null;
             }
 
-            // Find the slide index for this meal
+            // Build slide-to-meal mapping
+            slideToMeal = [];
             let startSlide = 0;
             let slideIdx = 0;
             for (let mi = 0; mi < foodMeals.length; mi++) {
-                if (mi === mealIndex) { startSlide = slideIdx; break; }
-                slideIdx += Math.max(foodMeals[mi].photos.length, 0);
+                if (mi === mealIndex) startSlide = slideIdx;
+                for (let pi = 0; pi < foodMeals[mi].photos.length; pi++) {
+                    slideToMeal.push(mi);
+                    slideIdx++;
+                }
             }
 
             foodLightbox = GLightbox({
@@ -951,6 +958,25 @@
                 openEffect: 'fade',
                 closeEffect: 'fade',
             });
+
+            foodLightbox.on('slide_changed', ({ current }) => {
+                const si = current.index;
+                const mi = slideToMeal[si];
+                if (mi !== undefined) {
+                    // Scroll gallery to this meal card
+                    const card = document.querySelector(`[data-meal-index="${mi}"]`);
+                    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                    // Near end? Trigger loading more
+                    if (mi >= foodMeals.length - 3 && foodHasMore && !foodLoading) {
+                        loadFood(false).then(() => {
+                            // Rebuild lightbox links with new meals
+                            buildLightboxLinks();
+                        });
+                    }
+                }
+            });
+
             foodLightbox.open();
         }
 
@@ -958,7 +984,7 @@
             const scoreClass = meal.health_color === 'green' ? 'text-emerald-400' : meal.health_color === 'yellow' ? 'text-amber-400' : meal.health_color === 'red' ? 'text-red-400' : 'text-gray-400';
             const time = new Date(meal.time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
 
-            let html = `<div class="bg-dark-card rounded-xl border border-dark-border overflow-hidden mb-4 ${meal.is_cheat_day ? 'border-dashed border-amber-700' : ''}">`;
+            let html = `<div class="bg-dark-card rounded-xl border border-dark-border overflow-hidden mb-4 ${meal.is_cheat_day ? 'border-dashed border-amber-700' : ''}" data-meal-index="${idx}">`;
 
             if (meal.photos.length > 0) {
                 html += `<div class="flex gap-1 overflow-x-auto p-2 bg-slate-800/50 cursor-pointer" onclick="openMealLightbox(${idx})">`;
