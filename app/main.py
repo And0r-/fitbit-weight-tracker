@@ -1,4 +1,5 @@
 """FastAPI application with all endpoints."""
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -85,6 +86,11 @@ try:
     app.mount("/static", StaticFiles(directory="static"), name="static")
 except RuntimeError:
     pass
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    return RedirectResponse("/static/favicon-32x32.ico", status_code=301)
 
 
 # ============================================
@@ -679,18 +685,18 @@ async def get_health_summary(
     share_token = get_token_from_request(request, token, db)
     _require_oura(share_token)
 
-    # Trigger fresh sync
+    # Trigger fresh sync (parallel)
     if sync:
+        tasks = []
         if fitbit_client.is_authenticated():
-            try:
-                await sync_scheduler.run_now(days=7)
-            except Exception as e:
-                logger.error(f"Summary weight sync failed: {e}")
+            tasks.append(sync_scheduler.run_now(days=7))
         if oura_client.is_authenticated():
-            try:
-                await sync_scheduler.run_oura_now(days=3)
-            except Exception as e:
-                logger.error(f"Summary oura sync failed: {e}")
+            tasks.append(sync_scheduler.run_oura_now(days=3))
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in results:
+                if isinstance(r, Exception):
+                    logger.error(f"Summary sync failed: {r}")
 
     # Get goal weight from Fitbit
     goal = None
