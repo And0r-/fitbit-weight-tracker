@@ -96,7 +96,7 @@ async def process_queue():
         logger.info(f"Processing analysis for meal {meal.id} ({len(photo_paths)} photos)")
 
         try:
-            result = await analyze_meal_photos(photo_paths)
+            result = await analyze_meal_photos(photo_paths, is_cheat_day=meal.is_cheat_day)
 
             # Update meal with results
             meal.total_calories = result.get("total_calories")
