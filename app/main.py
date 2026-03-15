@@ -803,7 +803,7 @@ async def upload_food_photos(
 @app.get("/api/food")
 async def get_food_gallery(
     request: Request,
-    days: int = Query(default=7, ge=1, le=90),
+    days: int = Query(default=7, ge=1, le=9999),
     show_cheat: bool = Query(default=False),
     token: str | None = Query(None),
     db: Session = Depends(get_db),
