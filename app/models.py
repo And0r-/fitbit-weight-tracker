@@ -83,6 +83,7 @@ class MealPhoto(Base):
 
     filename = Column(String(255), nullable=False)  # stored path relative to /app/data/food/
     original_filename = Column(String(255), nullable=True)
+    file_hash = Column(String(64), nullable=True, index=True)  # SHA-256 for dedup
     photo_taken_at = Column(DateTime, nullable=False)
     display_path = Column(String(255), nullable=True)  # 1200px, no EXIF
     thumbnail_path = Column(String(255), nullable=True)  # 400px, no EXIF

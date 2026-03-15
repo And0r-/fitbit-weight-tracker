@@ -1,4 +1,5 @@
 """Food upload, meal grouping, and day boundary logic."""
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta
@@ -118,12 +119,19 @@ def find_or_create_meal(db: Session, photo_taken_at: datetime) -> Meal:
     return meal
 
 
-def save_uploaded_photo(db: Session, file_data: bytes, original_filename: str) -> tuple[Meal, MealPhoto]:
+def save_uploaded_photo(db: Session, file_data: bytes, original_filename: str) -> tuple[Meal, MealPhoto] | tuple[None, None]:
     """Save an uploaded photo and assign it to a meal.
 
-    Returns (meal, photo) tuple.
+    Returns (meal, photo) tuple, or (None, None) if duplicate.
     """
     _ensure_dirs()
+
+    # Check for duplicates by file hash
+    file_hash = hashlib.sha256(file_data).hexdigest()
+    existing = db.query(MealPhoto).filter(MealPhoto.file_hash == file_hash).first()
+    if existing:
+        logger.info(f"Duplicate photo skipped: {original_filename} (hash={file_hash[:12]}...)")
+        return None, None
 
     # Save original (with EXIF, for re-analysis)
     base_name = str(uuid.uuid4())
@@ -163,6 +171,7 @@ def save_uploaded_photo(db: Session, file_data: bytes, original_filename: str) -
         meal_id=meal.id,
         filename=filename,
         original_filename=original_filename,
+        file_hash=file_hash,
         photo_taken_at=naive_taken,
         display_path=f"display/{display_filename}",
         thumbnail_path=f"thumbs/{thumb_filename}",

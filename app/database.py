@@ -33,6 +33,9 @@ def init_db():
         conn.execute(text(
             "ALTER TABLE meal_photos ADD COLUMN IF NOT EXISTS display_path VARCHAR(255)"
         ))
+        conn.execute(text(
+            "ALTER TABLE meal_photos ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64)"
+        ))
         conn.commit()
 
 

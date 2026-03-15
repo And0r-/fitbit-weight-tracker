@@ -210,6 +210,15 @@
                 </label>
                 {% endif %}
             </div>
+            <!-- Upload Progress -->
+            <div id="uploadProgress" class="hidden mb-4">
+                <div class="flex justify-between text-xs text-gray-400 mb-1">
+                    <span id="uploadProgressText">Hochladen...</span>
+                </div>
+                <div class="w-full bg-slate-700 rounded-full h-2">
+                    <div id="uploadProgressFill" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
             <div id="foodContent">
                 <p class="text-gray-400">Laden...</p>
             </div>
@@ -749,21 +758,66 @@
 
         async function uploadFoodPhotos(files) {
             if (!files.length) return;
+
+            const progressBar = document.getElementById('uploadProgress');
+            const progressFill = document.getElementById('uploadProgressFill');
+            const progressText = document.getElementById('uploadProgressText');
+            progressBar.classList.remove('hidden');
+            progressFill.style.width = '0%';
+            progressText.textContent = `0 / ${files.length} Fotos...`;
+
             const formData = new FormData();
             for (const f of files) formData.append('files', f);
 
             try {
-                const resp = await fetch('/api/food/upload?token=' + TOKEN, { method: 'POST', body: formData });
-                if (!resp.ok) throw new Error('Upload failed');
-                const data = await resp.json();
-                // Reload food gallery after short delay (debounce will handle analysis)
-                setTimeout(() => loadFood(), 1000);
+                const xhr = new XMLHttpRequest();
+                await new Promise((resolve, reject) => {
+                    xhr.upload.addEventListener('progress', (e) => {
+                        if (e.lengthComputable) {
+                            const pct = Math.round((e.loaded / e.total) * 100);
+                            progressFill.style.width = pct + '%';
+                            progressText.textContent = `Hochladen... ${pct}%`;
+                        }
+                    });
+                    xhr.addEventListener('load', () => {
+                        if (xhr.status === 200) {
+                            const data = JSON.parse(xhr.responseText);
+                            progressFill.style.width = '100%';
+                            progressText.textContent = `${data.uploaded} Foto(s) hochgeladen`;
+                            resolve();
+                        } else {
+                            reject(new Error('Upload failed: ' + xhr.status));
+                        }
+                    });
+                    xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+                    xhr.open('POST', '/api/food/upload?token=' + TOKEN);
+                    xhr.send(formData);
+                });
+
+                setTimeout(() => {
+                    progressBar.classList.add('hidden');
+                    loadFood();
+                }, 1500);
             } catch (e) {
                 console.error('Upload error:', e);
-                alert('Upload fehlgeschlagen');
+                progressText.textContent = 'Upload fehlgeschlagen!';
+                progressFill.style.width = '100%';
+                progressFill.classList.replace('bg-blue-500', 'bg-red-500');
+                setTimeout(() => {
+                    progressBar.classList.add('hidden');
+                    progressFill.classList.replace('bg-red-500', 'bg-blue-500');
+                }, 3000);
             }
-            // Reset file input
             document.getElementById('foodUpload').value = '';
+        }
+
+        async function deletePhoto(photoId) {
+            if (!confirm('Foto wirklich loeschen?')) return;
+            try {
+                const resp = await fetch(`/api/food/photo/${photoId}?token=${TOKEN}`, { method: 'DELETE' });
+                if (!resp.ok) throw new Error('Failed');
+                loadFood();
+            } catch (e) { alert('Fehler: ' + e.message); }
         }
 
         async function correctMeal(mealId) {
@@ -935,7 +989,10 @@
                     if (meal.photos.length > 0) {
                         html += `<div class="flex gap-1 overflow-x-auto p-2 bg-slate-800/50 cursor-pointer" onclick="openMealLightbox(${idx})">`;
                         for (const photo of meal.photos) {
-                            html += `<img src="${photo.thumbnail}" alt="" class="h-32 rounded object-cover hover:opacity-80 transition">`;
+                            html += `<div class="relative flex-shrink-0">
+                                <img src="${photo.thumbnail}" alt="" class="h-32 rounded object-cover hover:opacity-80 transition">
+                                ${IS_ADMIN && meal.photos.length > 1 ? `<button onclick="event.stopPropagation(); deletePhoto(${photo.id})" class="absolute top-1 right-1 bg-red-600/80 hover:bg-red-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">x</button>` : ''}
+                            </div>`;
                         }
                         html += `</div>`;
                     }

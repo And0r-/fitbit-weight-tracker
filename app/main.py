@@ -783,6 +783,8 @@ async def upload_food_photos(
             continue
 
         meal, photo = save_uploaded_photo(db, data, file.filename or "upload.jpg")
+        if meal is None:
+            continue  # Duplicate, skip
         meals_to_analyze.add(meal.id)
         results.append({
             "photo_id": photo.id,
@@ -958,3 +960,52 @@ async def delete_meal(
     db.commit()
 
     return {"status": "deleted", "meal_id": meal_id}
+
+
+@app.delete("/api/food/photo/{photo_id}")
+async def delete_photo(
+    request: Request,
+    photo_id: int,
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Delete a single photo from a meal. Re-triggers analysis if meal still has photos."""
+    share_token = get_token_from_request(request, token, db)
+    if not share_token or not share_token.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    photo = db.query(MealPhoto).filter(MealPhoto.id == photo_id).first()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    meal_id = photo.meal_id
+
+    # Delete files
+    from pathlib import Path
+    food_dir = Path("/app/data/food")
+    for path in [photo.filename, photo.display_path, photo.thumbnail_path]:
+        if path:
+            fp = food_dir / path
+            if fp.exists():
+                fp.unlink()
+
+    db.delete(photo)
+    db.flush()
+
+    # Check if meal still has photos
+    remaining = db.query(MealPhoto).filter(MealPhoto.meal_id == meal_id).count()
+    if remaining == 0:
+        # No photos left — delete the whole meal
+        db.query(AnalysisQueue).filter(AnalysisQueue.meal_id == meal_id).delete()
+        meal = db.query(Meal).filter(Meal.id == meal_id).first()
+        if meal:
+            db.delete(meal)
+        db.commit()
+        return {"status": "deleted", "photo_id": photo_id, "meal_deleted": True}
+    else:
+        # Re-trigger analysis with remaining photos
+        meal = db.query(Meal).filter(Meal.id == meal_id).first()
+        if meal:
+            schedule_analysis(db, meal)
+        db.commit()
+        return {"status": "deleted", "photo_id": photo_id, "meal_deleted": False, "reanalysis": True}
