@@ -198,10 +198,6 @@
                         <input type="checkbox" id="showCheatDay" onchange="loadFood()" class="rounded">
                         <span>Cheat Day</span>
                     </label>
-                    <label class="flex items-center gap-2 text-sm text-gray-400">
-                        <input type="checkbox" id="foodShowAll" onchange="loadFood()" class="rounded">
-                        <span>Alle laden</span>
-                    </label>
                 </div>
                 {% if is_admin %}
                 <label class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition cursor-pointer text-sm">
@@ -221,6 +217,9 @@
             </div>
             <div id="foodContent">
                 <p class="text-gray-400">Laden...</p>
+            </div>
+            <div id="foodLoadMore" class="hidden text-center py-4">
+                <span class="text-gray-500 text-sm animate-pulse">Mehr laden...</span>
             </div>
         </div>
         {% endif %}
@@ -854,6 +853,10 @@
         }
 
         let foodMeals = [];
+        let foodOffset = 0;
+        let foodHasMore = false;
+        let foodLoading = false;
+        let foodObserver = null;
 
         function buildMealDescription(meal, photoIdx, totalPhotos) {
             let desc = '';
@@ -951,28 +954,102 @@
             foodLightbox.open();
         }
 
-        async function loadFood() {
-            try {
-                const showCheat = document.getElementById('showCheatDay')?.checked || false;
-                const foodDays = document.getElementById('foodShowAll')?.checked ? 365 : 14;
-                const data = await fetchAPI(`/api/food?days=${foodDays}&show_cheat=${showCheat}`);
-                ouraTabsLoaded.food = true;
-                const container = document.getElementById('foodContent');
+        function renderMealCard(meal, idx) {
+            const scoreClass = meal.health_color === 'green' ? 'text-emerald-400' : meal.health_color === 'yellow' ? 'text-amber-400' : meal.health_color === 'red' ? 'text-red-400' : 'text-gray-400';
+            const time = new Date(meal.time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
 
-                if (!data.meals || data.meals.length === 0) {
+            let html = `<div class="bg-dark-card rounded-xl border border-dark-border overflow-hidden mb-4 ${meal.is_cheat_day ? 'border-dashed border-amber-700' : ''}">`;
+
+            if (meal.photos.length > 0) {
+                html += `<div class="flex gap-1 overflow-x-auto p-2 bg-slate-800/50 cursor-pointer" onclick="openMealLightbox(${idx})">`;
+                for (const photo of meal.photos) {
+                    html += `<div class="relative flex-shrink-0">
+                        <img src="${photo.thumbnail}" alt="" class="h-32 rounded object-cover hover:opacity-80 transition" loading="lazy">
+                        ${IS_ADMIN && meal.photos.length > 1 ? `<button onclick="event.stopPropagation(); deletePhoto(${photo.id})" class="absolute top-1 right-1 bg-red-600/80 hover:bg-red-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">x</button>` : ''}
+                    </div>`;
+                }
+                html += `</div>`;
+            }
+
+            html += `<div class="p-4"><div class="flex justify-between items-start mb-2">`;
+            html += `<span class="text-gray-400 text-sm">${time} Uhr</span>`;
+
+            if (meal.status === 'complete' && meal.health_score) {
+                html += `<span class="text-2xl font-bold ${scoreClass}">${meal.health_score}</span>`;
+            } else if (meal.status === 'pending' || meal.status === 'analyzing') {
+                html += `<span class="text-gray-500 text-sm animate-pulse">Analyse laeuft...</span>`;
+            } else if (meal.status === 'failed') {
+                html += `<span class="text-red-400 text-sm">Analyse fehlgeschlagen</span>`;
+            }
+            html += `</div>`;
+
+            if (meal.status === 'complete') {
+                if (meal.items && meal.items.length > 0) {
+                    html += `<div class="space-y-1 mb-3">`;
+                    for (const item of meal.items) {
+                        html += `<div class="flex justify-between text-sm">
+                            <span class="text-white">${item.name} <span class="text-gray-500">${item.portion || ''}</span></span>
+                            <span class="text-gray-400">${item.calories || '?'} kcal</span>
+                        </div>`;
+                    }
+                    html += `</div>`;
+                }
+                html += `<div class="flex gap-4 text-xs text-gray-500 mb-2">
+                    <span>${meal.total_calories || '?'} kcal</span>
+                    <span>P: ${meal.total_protein_g || '?'}g</span>
+                    <span>K: ${meal.total_carbs_g || '?'}g</span>
+                    <span>F: ${meal.total_fat_g || '?'}g</span>
+                </div>`;
+                if (meal.ai_comment) {
+                    html += `<p class="text-sm text-gray-400 italic">${meal.ai_comment}</p>`;
+                }
+            }
+
+            if (IS_ADMIN) {
+                html += `<div class="flex gap-2 mt-3 pt-3 border-t border-dark-border">
+                    <button onclick="correctMeal(${meal.id})" class="text-xs text-blue-400 hover:text-blue-300">Korrigieren</button>
+                    <button onclick="reanalyzeMeal(${meal.id})" class="text-xs text-amber-400 hover:text-amber-300">Neu analysieren</button>
+                    <button onclick="deleteMeal(${meal.id})" class="text-xs text-red-400 hover:text-red-300">Loeschen</button>
+                </div>`;
+            }
+
+            html += `</div></div>`;
+            return html;
+        }
+
+        async function loadFood(reset = true) {
+            if (foodLoading) return;
+            foodLoading = true;
+
+            try {
+                if (reset) {
+                    foodMeals = [];
+                    foodOffset = 0;
+                    document.getElementById('foodContent').innerHTML = '';
+                }
+
+                const showCheat = document.getElementById('showCheatDay')?.checked || false;
+                const data = await fetchAPI(`/api/food?limit=10&offset=${foodOffset}&show_cheat=${showCheat}`);
+                ouraTabsLoaded.food = true;
+
+                const container = document.getElementById('foodContent');
+                const loadMoreEl = document.getElementById('foodLoadMore');
+
+                if (data.meals.length === 0 && foodMeals.length === 0) {
                     container.innerHTML = '<p class="text-gray-400">Keine Essens-Daten vorhanden. Lade Fotos hoch um zu starten.</p>';
+                    loadMoreEl.classList.add('hidden');
+                    foodLoading = false;
                     return;
                 }
 
-                foodMeals = data.meals;
+                // Determine last day shown for day separator continuity
+                let currentDay = foodMeals.length > 0 ? foodMeals[foodMeals.length - 1].day : '';
+
                 let html = '';
-                let currentDay = '';
-                let mealIdx = 0;
-
                 for (const meal of data.meals) {
-                    const idx = mealIdx++;
+                    const idx = foodMeals.length;
+                    foodMeals.push(meal);
 
-                    // Day separator
                     if (meal.day !== currentDay) {
                         currentDay = meal.day;
                         const dayDate = new Date(meal.day + 'T12:00:00');
@@ -980,78 +1057,39 @@
                         html += `<div class="mt-6 mb-2 first:mt-0"><h3 class="text-white font-medium">${dayLabel}${meal.is_cheat_day ? ' <span class="text-xs bg-amber-900/50 text-amber-400 px-2 py-0.5 rounded ml-2">Cheat Day</span>' : ''}</h3></div>`;
                     }
 
-                    const scoreClass = meal.health_color === 'green' ? 'text-emerald-400' : meal.health_color === 'yellow' ? 'text-amber-400' : meal.health_color === 'red' ? 'text-red-400' : 'text-gray-400';
-                    const time = new Date(meal.time).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
-
-                    html += `<div class="bg-dark-card rounded-xl border border-dark-border overflow-hidden mb-4 ${meal.is_cheat_day ? 'border-dashed border-amber-700' : ''}">`;
-
-                    // Photos row — clickable to open lightbox
-                    if (meal.photos.length > 0) {
-                        html += `<div class="flex gap-1 overflow-x-auto p-2 bg-slate-800/50 cursor-pointer" onclick="openMealLightbox(${idx})">`;
-                        for (const photo of meal.photos) {
-                            html += `<div class="relative flex-shrink-0">
-                                <img src="${photo.thumbnail}" alt="" class="h-32 rounded object-cover hover:opacity-80 transition">
-                                ${IS_ADMIN && meal.photos.length > 1 ? `<button onclick="event.stopPropagation(); deletePhoto(${photo.id})" class="absolute top-1 right-1 bg-red-600/80 hover:bg-red-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">x</button>` : ''}
-                            </div>`;
-                        }
-                        html += `</div>`;
-                    }
-
-                    html += `<div class="p-4">`;
-                    html += `<div class="flex justify-between items-start mb-2">`;
-                    html += `<span class="text-gray-400 text-sm">${time} Uhr</span>`;
-
-                    if (meal.status === 'complete' && meal.health_score) {
-                        html += `<span class="text-2xl font-bold ${scoreClass}">${meal.health_score}</span>`;
-                    } else if (meal.status === 'pending' || meal.status === 'analyzing') {
-                        html += `<span class="text-gray-500 text-sm animate-pulse">Analyse laeuft...</span>`;
-                    } else if (meal.status === 'failed') {
-                        html += `<span class="text-red-400 text-sm">Analyse fehlgeschlagen</span>`;
-                    }
-                    html += `</div>`;
-
-                    // Analysis results
-                    if (meal.status === 'complete') {
-                        if (meal.items && meal.items.length > 0) {
-                            html += `<div class="space-y-1 mb-3">`;
-                            for (const item of meal.items) {
-                                html += `<div class="flex justify-between text-sm">
-                                    <span class="text-white">${item.name} <span class="text-gray-500">${item.portion || ''}</span></span>
-                                    <span class="text-gray-400">${item.calories || '?'} kcal</span>
-                                </div>`;
-                            }
-                            html += `</div>`;
-                        }
-
-                        html += `<div class="flex gap-4 text-xs text-gray-500 mb-2">
-                            <span>${meal.total_calories || '?'} kcal</span>
-                            <span>P: ${meal.total_protein_g || '?'}g</span>
-                            <span>K: ${meal.total_carbs_g || '?'}g</span>
-                            <span>F: ${meal.total_fat_g || '?'}g</span>
-                        </div>`;
-
-                        if (meal.ai_comment) {
-                            html += `<p class="text-sm text-gray-400 italic">${meal.ai_comment}</p>`;
-                        }
-                    }
-
-                    // Admin actions
-                    if (IS_ADMIN) {
-                        html += `<div class="flex gap-2 mt-3 pt-3 border-t border-dark-border">
-                            <button onclick="correctMeal(${meal.id})" class="text-xs text-blue-400 hover:text-blue-300">Korrigieren</button>
-                            <button onclick="reanalyzeMeal(${meal.id})" class="text-xs text-amber-400 hover:text-amber-300">Neu analysieren</button>
-                            <button onclick="deleteMeal(${meal.id})" class="text-xs text-red-400 hover:text-red-300">Loeschen</button>
-                        </div>`;
-                    }
-
-                    html += `</div></div>`;
+                    html += renderMealCard(meal, idx);
                 }
 
-                container.innerHTML = html;
+                container.insertAdjacentHTML('beforeend', html);
+                foodOffset += data.meals.length;
+                foodHasMore = data.has_more;
+
+                // Show/hide load more sentinel
+                if (foodHasMore) {
+                    loadMoreEl.classList.remove('hidden');
+                    setupFoodObserver();
+                } else {
+                    loadMoreEl.classList.add('hidden');
+                }
+
             } catch (e) {
                 console.error('Error loading food:', e);
-                document.getElementById('foodContent').innerHTML = '<p class="text-red-400">Fehler beim Laden.</p>';
+                if (foodMeals.length === 0) {
+                    document.getElementById('foodContent').innerHTML = '<p class="text-red-400">Fehler beim Laden.</p>';
+                }
             }
+            foodLoading = false;
+        }
+
+        function setupFoodObserver() {
+            if (foodObserver) foodObserver.disconnect();
+            const sentinel = document.getElementById('foodLoadMore');
+            foodObserver = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && foodHasMore && !foodLoading) {
+                    loadFood(false); // Append, don't reset
+                }
+            }, { rootMargin: '200px' });
+            foodObserver.observe(sentinel);
         }
 
         // ============================================

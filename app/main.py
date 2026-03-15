@@ -822,27 +822,27 @@ async def upload_food_photos(
 @app.get("/api/food")
 async def get_food_gallery(
     request: Request,
-    days: int = Query(default=7, ge=1, le=9999),
+    limit: int = Query(default=10, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     show_cheat: bool = Query(default=False),
     token: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Get food gallery data."""
+    """Get food gallery data with pagination."""
     share_token = get_token_from_request(request, token, db)
     _require_food(share_token)
 
-    from .food import compute_food_day
-    from datetime import timedelta
-    from zoneinfo import ZoneInfo
-
-    tz = ZoneInfo(settings.timezone)
-    cutoff_day = (datetime.now(tz) - timedelta(days=days)).strftime("%Y-%m-%d")
-
-    query = db.query(Meal).filter(Meal.day >= cutoff_day)
+    query = db.query(Meal)
     if not show_cheat:
         query = query.filter(Meal.is_cheat_day == False)
 
-    meals = query.order_by(Meal.first_photo_at.desc()).all()
+    total = query.count()
+    meals = (
+        query.order_by(Meal.first_photo_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     result = []
     for meal in meals:
@@ -871,7 +871,14 @@ async def get_food_gallery(
             "ai_comment": meal.ai_comment,
         })
 
-    return {"meals": result, "days": days, "show_cheat": show_cheat}
+    return {
+        "meals": result,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < total,
+        "show_cheat": show_cheat,
+    }
 
 
 @app.post("/admin/food/retry")
