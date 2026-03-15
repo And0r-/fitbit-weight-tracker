@@ -18,7 +18,7 @@ from .fitbit import fitbit_client
 from .food import save_uploaded_photo
 from .food_queue import get_queue_status, retry_failed_jobs, schedule_analysis
 from .influxdb_client import weight_db
-from .models import AccessLog, Meal, MealPhoto, ShareToken
+from .models import AccessLog, AnalysisQueue, Meal, MealPhoto, ShareToken
 from .oura import oura_client
 from .scheduler import sync_scheduler
 from .summary import build_health_summary
