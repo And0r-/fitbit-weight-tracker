@@ -257,13 +257,13 @@ class WeightDatabase:
                     fields[key] = int(entry[key])
             if "efficiency" in entry and entry["efficiency"] is not None:
                 fields["efficiency"] = int(entry["efficiency"])
-            hr = entry.get("heart_rate", {})
-            if isinstance(hr, dict) and "lowest" in hr:
-                fields["lowest_heart_rate"] = int(hr["lowest"])
+            if "lowest_heart_rate" in entry and entry["lowest_heart_rate"] is not None:
+                fields["lowest_heart_rate"] = int(entry["lowest_heart_rate"])
             if "average_heart_rate" in entry and entry["average_heart_rate"] is not None:
                 fields["average_heart_rate"] = float(entry["average_heart_rate"])
-            if "average_hrv" in entry and entry["average_hrv"] is not None:
-                fields["average_hrv"] = float(entry["average_hrv"])
+            hrv = entry.get("average_hrv")
+            if hrv is not None:
+                fields["average_hrv"] = float(hrv["value"] if isinstance(hrv, dict) else hrv)
 
             if fields:
                 points.append({
@@ -381,6 +381,34 @@ class WeightDatabase:
         """Get stress data for the last N days."""
         query = f"""
             SELECT * FROM oura_stress
+            WHERE time > now() - {days}d
+            ORDER BY time ASC
+        """
+        result = self._query(query)
+        return list(result.get_points())
+
+    def write_spo2_batch(self, entries: list[dict]):
+        """Write SpO2 data to InfluxDB."""
+        points = []
+        for entry in entries:
+            day = entry.get("day")
+            if not day:
+                continue
+            spo2_pct = entry.get("spo2_percentage", {})
+            avg = spo2_pct.get("average") if isinstance(spo2_pct, dict) else spo2_pct
+            if avg is not None:
+                points.append({
+                    "measurement": "oura_spo2",
+                    "tags": {"source": "oura"},
+                    "time": f"{day}T00:00:00Z",
+                    "fields": {"average": float(avg)},
+                })
+        self._write_points_safe(points)
+
+    def get_spo2_history(self, days: int = 7) -> list[dict]:
+        """Get SpO2 data for the last N days."""
+        query = f"""
+            SELECT average FROM oura_spo2
             WHERE time > now() - {days}d
             ORDER BY time ASC
         """

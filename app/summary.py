@@ -385,6 +385,21 @@ async def build_health_summary(goal_weight: float | None = None) -> dict:
         logger.error(f"Summary stress failed: {e}")
         result["stress"] = {"error": str(e)}
 
+    # SpO2
+    try:
+        spo2_data = weight_db.get_spo2_history(7)
+        spo2_entries = []
+        for entry in spo2_data:
+            day = _to_local(entry["time"])[:10]
+            spo2_entries.append({"date": day, "avg_pct": entry.get("average")})
+        result["spo2"] = {
+            "latest": spo2_entries[-1] if spo2_entries else None,
+            "last_7_days": spo2_entries,
+        }
+    except Exception as e:
+        logger.error(f"Summary SpO2 failed: {e}")
+        result["spo2"] = {"error": str(e)}
+
     # Workouts
     try:
         result["workouts"] = _build_workout_summary()

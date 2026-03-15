@@ -144,6 +144,14 @@ async def sync_oura_data(days: int = 3):
     except Exception as e:
         logger.error(f"Oura workouts sync failed: {e}")
 
+    try:
+        # SpO2
+        spo2 = await oura_client.get_daily_spo2(start_date, end_date)
+        weight_db.write_spo2_batch(spo2)
+        logger.info(f"Oura SpO2: {len(spo2)} entries")
+    except Exception as e:
+        logger.error(f"Oura SpO2 sync failed: {e}")
+
 
 async def sync_oura_full(days: int = 30):
     """Sync full Oura history."""
