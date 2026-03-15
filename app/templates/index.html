@@ -1068,20 +1068,74 @@
                     return;
                 }
 
-                // Streak card (only on first load)
-                if (reset && data.streak && data.streak.days > 0) {
-                    const s = data.streak;
-                    const flames = s.days >= 30 ? '🔥🔥🔥' : s.days >= 7 ? '🔥🔥' : '🔥';
-                    const streakColor = s.days >= 14 ? 'text-emerald-400' : s.days >= 7 ? 'text-amber-400' : 'text-white';
-                    container.innerHTML = `<div class="bg-gradient-to-r from-dark-card to-slate-800 rounded-xl border border-dark-border p-5 mb-6">
-                        <div class="flex items-center gap-3">
+                // Stats card (streak + weekly comparison, only on first load)
+                if (reset) {
+                    let statsHtml = '';
+
+                    // Streak
+                    if (data.streak && data.streak.days > 0) {
+                        const s = data.streak;
+                        const flames = s.days >= 30 ? '🔥🔥🔥' : s.days >= 7 ? '🔥🔥' : '🔥';
+                        const streakColor = s.days >= 14 ? 'text-emerald-400' : s.days >= 7 ? 'text-amber-400' : 'text-white';
+                        statsHtml += `<div class="flex items-center gap-3 mb-4">
                             <span class="text-3xl">${flames}</span>
                             <div>
                                 <p class="text-2xl font-bold ${streakColor}">${s.days} Tage Streak!</p>
                                 <p class="text-gray-400 text-sm">Keine rote Mahlzeit seit ${s.since ? new Date(s.since + 'T12:00:00').toLocaleDateString('de-CH', { day: 'numeric', month: 'long' }) : '?'}${s.best > s.days ? ` — Rekord: ${s.best} Tage` : s.days >= s.best && s.days >= 7 ? ' — Neuer Rekord!' : ''}</p>
                             </div>
-                        </div>
-                    </div>`;
+                        </div>`;
+                    }
+
+                    // Weekly comparison
+                    if (data.weekly) {
+                        const showCheat = document.getElementById('showCheatDay')?.checked || false;
+                        const key = showCheat ? 'with_cheat' : 'without_cheat';
+                        const w = data.weekly;
+
+                        function weekCell(label, week) {
+                            if (!week) return '';
+                            const d = week[key];
+                            if (!d || !d.meals_logged) return `<div class="text-center"><p class="text-gray-500 text-xs mb-1">${label}</p><p class="text-gray-600 text-sm">—</p></div>`;
+                            const scoreColor = d.avg_score >= 70 ? 'text-emerald-400' : d.avg_score >= 50 ? 'text-amber-400' : 'text-red-400';
+                            return `<div class="text-center">
+                                <p class="text-gray-500 text-xs mb-1">${label}</p>
+                                <p class="text-xl font-bold ${scoreColor}">${d.avg_score || '—'}</p>
+                                <p class="text-gray-500 text-xs">${d.avg_daily_kcal ? Math.round(d.avg_daily_kcal) + ' kcal/d' : '—'}</p>
+                                <p class="text-gray-600 text-xs">${d.meals_logged} Meals</p>
+                            </div>`;
+                        }
+
+                        // Trend arrow
+                        const cur = w.current_week?.[key]?.avg_score;
+                        const last = w.last_week?.[key]?.avg_score;
+                        let trend = '';
+                        if (cur && last) {
+                            const diff = cur - last;
+                            if (diff > 3) trend = '<span class="text-emerald-400 text-lg">↑</span>';
+                            else if (diff < -3) trend = '<span class="text-red-400 text-lg">↓</span>';
+                            else trend = '<span class="text-gray-500 text-lg">→</span>';
+                        }
+
+                        statsHtml += `<div class="grid grid-cols-3 gap-4 pt-3 ${data.streak?.days > 0 ? 'border-t border-dark-border' : ''}">
+                            ${weekCell('Vorletzte', w.week_before)}
+                            ${weekCell('Letzte', w.last_week)}
+                            <div class="text-center">
+                                <p class="text-gray-500 text-xs mb-1">Diese Woche ${trend}</p>
+                                ${w.current_week ? (() => {
+                                    const d = w.current_week[key];
+                                    if (!d || !d.meals_logged) return '<p class="text-gray-600 text-sm">—</p>';
+                                    const sc = d.avg_score >= 70 ? 'text-emerald-400' : d.avg_score >= 50 ? 'text-amber-400' : 'text-red-400';
+                                    return `<p class="text-xl font-bold ${sc}">${d.avg_score || '—'}</p>
+                                        <p class="text-gray-500 text-xs">${d.avg_daily_kcal ? Math.round(d.avg_daily_kcal) + ' kcal/d' : '—'}</p>
+                                        <p class="text-gray-600 text-xs">${d.meals_logged} Meals</p>`;
+                                })() : ''}
+                            </div>
+                        </div>`;
+                    }
+
+                    if (statsHtml) {
+                        container.innerHTML = `<div class="bg-gradient-to-r from-dark-card to-slate-800 rounded-xl border border-dark-border p-5 mb-6">${statsHtml}</div>`;
+                    }
                 }
 
                 // Determine last day shown for day separator continuity

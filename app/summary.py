@@ -443,9 +443,77 @@ def _build_food_summary() -> dict:
             },
             "recent_meals": meals_list,
             "streak": calculate_streak(db),
+            "weekly_comparison": _build_weekly_comparison(db),
         }
     finally:
         db.close()
+
+
+def _build_weekly_comparison(db) -> dict:
+    """Build 3-week comparison stats (current, last, week before).
+
+    Weeks run Mon-Sun. Returns stats both with and without cheat days.
+    """
+    now = _local_now()
+    # Find Monday of current week
+    today = now.date()
+    if now.hour < settings.day_boundary_hour:
+        today = today - timedelta(days=1)
+    monday = today - timedelta(days=today.weekday())
+
+    weeks = []
+    for w in range(3):
+        week_start = monday - timedelta(weeks=w)
+        week_end = week_start + timedelta(days=6)
+        start_str = week_start.strftime("%Y-%m-%d")
+        end_str = week_end.strftime("%Y-%m-%d")
+
+        meals = (
+            db.query(Meal)
+            .filter(
+                Meal.day >= start_str,
+                Meal.day <= end_str,
+                Meal.analysis_status == "complete",
+            )
+            .all()
+        )
+
+        # Without cheat days
+        non_cheat = [m for m in meals if not m.is_cheat_day]
+        nc_scores = [m.health_score for m in non_cheat if m.health_score]
+        nc_daily_cals = {}
+        for m in non_cheat:
+            if m.total_calories:
+                nc_daily_cals.setdefault(m.day, 0)
+                nc_daily_cals[m.day] += m.total_calories
+        nc_days = len(set(m.day for m in non_cheat))
+
+        # With cheat days (all meals)
+        all_scores = [m.health_score for m in meals if m.health_score]
+        all_daily_cals = {}
+        for m in meals:
+            if m.total_calories:
+                all_daily_cals.setdefault(m.day, 0)
+                all_daily_cals[m.day] += m.total_calories
+        all_days = len(set(m.day for m in meals))
+
+        week_label = "current_week" if w == 0 else "last_week" if w == 1 else "week_before"
+        weeks.append((week_label, {
+            "without_cheat": {
+                "avg_score": _safe_mean(nc_scores),
+                "avg_daily_kcal": _safe_mean(list(nc_daily_cals.values())) if nc_daily_cals else None,
+                "meals_logged": len(non_cheat),
+                "days_logged": nc_days,
+            },
+            "with_cheat": {
+                "avg_score": _safe_mean(all_scores),
+                "avg_daily_kcal": _safe_mean(list(all_daily_cals.values())) if all_daily_cals else None,
+                "meals_logged": len(meals),
+                "days_logged": all_days,
+            },
+        }))
+
+    return {label: data for label, data in weeks}
 
 
 async def build_health_summary(goal_weight: float | None = None) -> dict:
