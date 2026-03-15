@@ -9,6 +9,7 @@ from .config import settings
 from .database import SessionLocal
 from .food_analyzer import analyze_meal_photos
 from .models import AnalysisQueue, Meal, MealPhoto
+from .ws import ws_manager
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,14 @@ async def process_queue():
             logger.info(f"Analysis complete for meal {meal.id}: "
                         f"score={meal.health_score}, calories={meal.total_calories}")
 
+            # Notify connected clients
+            await ws_manager.broadcast("meal_analyzed", {
+                "meal_id": meal.id,
+                "health_score": meal.health_score,
+                "health_color": meal.health_color,
+                "status": "complete",
+            })
+
         except Exception as e:
             logger.error(f"Analysis failed for meal {meal.id}: {e}")
             job.retry_count += 1
@@ -134,6 +143,9 @@ async def process_queue():
                 job.status = "failed"
                 meal.analysis_status = "failed"
                 logger.error(f"Meal {meal.id} analysis permanently failed after {job.max_retries} retries")
+                await ws_manager.broadcast("meal_analyzed", {
+                    "meal_id": meal.id, "status": "failed",
+                })
             else:
                 # Retry with backoff: 5min, 15min, 45min
                 backoff = timedelta(minutes=5 * (3 ** (job.retry_count - 1)))

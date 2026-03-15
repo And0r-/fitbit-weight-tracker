@@ -5,7 +5,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -22,6 +22,7 @@ from .models import AccessLog, AnalysisQueue, Meal, MealPhoto, ShareToken
 from .oura import oura_client
 from .scheduler import sync_scheduler
 from .summary import build_health_summary
+from .ws import ws_manager
 
 # Configure logging
 logging.basicConfig(
@@ -744,6 +745,22 @@ async def get_health_summary(
             pass
 
     return await build_health_summary(goal_weight=goal)
+
+
+# ============================================
+# WebSocket
+# ============================================
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, ignore client messages
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
 
 
 # ============================================

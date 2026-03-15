@@ -1065,6 +1065,29 @@
 
         // Load weight data
         loadGoal().then(() => loadPeriod(DEFAULT_PERIOD));
+
+        // WebSocket for live updates
+        (function connectWS() {
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(`${proto}//${location.host}/ws`);
+            ws.onmessage = (e) => {
+                try {
+                    const msg = JSON.parse(e.data);
+                    if (msg.event === 'meal_analyzed') {
+                        // Reload food tab if visible
+                        const foodTab = document.getElementById('tab-food');
+                        if (foodTab && !foodTab.classList.contains('hidden')) {
+                            loadFood();
+                        } else {
+                            // Mark as stale so next tab switch reloads
+                            ouraTabsLoaded.food = false;
+                        }
+                    }
+                } catch (err) { console.error('WS parse error:', err); }
+            };
+            ws.onclose = () => setTimeout(connectWS, 5000); // Auto-reconnect
+            ws.onerror = () => ws.close();
+        })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/glightbox@3.3.0/dist/js/glightbox.min.js"></script>
 </body>
