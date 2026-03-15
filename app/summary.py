@@ -1,7 +1,7 @@
 """Compact health summary endpoint for AI assistants."""
 import logging
 from datetime import datetime, timedelta
-from statistics import mean
+from statistics import mean, stdev
 from zoneinfo import ZoneInfo
 
 from .config import settings
@@ -255,12 +255,25 @@ def _build_sleep_summary() -> dict:
         scores_7d.append({"date": day, "score": score})
     scores_7d = scores_7d[-7:]
 
+    # Average sleep hours (from long_sleep sessions)
+    sleep_hours = [s.get("total_sleep_duration", 0) / 3600
+                   for s in long_sessions if s.get("total_sleep_duration")]
+    avg_sleep_hours = round(mean(sleep_hours), 1) if sleep_hours else None
+
+    # HRV trend (from long_sleep sessions)
+    hrv_values = [s.get("average_hrv") for s in long_sessions if s.get("average_hrv") is not None]
+
     return {
         "last_night": last_night,
         "recent_naps": recent_naps if recent_naps else None,
         "last_7_days": scores_7d,
         "avg_score_30d": _safe_mean(scores_all),
         "trend_30d": _compute_trend(scores_all),
+        "avg_sleep_hours_30d": avg_sleep_hours,
+        "hrv_30d": {
+            "average": _safe_mean(hrv_values),
+            "trend": _compute_trend(hrv_values),
+        } if hrv_values else None,
     }
 
 
